@@ -1,8 +1,3 @@
-library(mlr3pipelines)
-library(mlr3verse)
-library(mlr3misc)
-library(R6)
-
 PipeOpUniform = R6::R6Class(
   "PipeOpUniform",
   inherit = mlr3pipelines::PipeOpTaskPreproc,
@@ -24,9 +19,9 @@ PipeOpUniform = R6::R6Class(
       # state variables
       if (!(is.null(self$groups))) {
         row_ids  = self$groups[group == self$groups[nrow(self$groups), group], row_id]
-        ecdf_ = map(dt[row_ids], ecdf)
+        ecdf_ = mlr3misc::map(dt[row_ids], ecdf)
       } else {
-        ecdf_ = map(dt, ecdf)
+        ecdf_ = mlr3misc::map(dt, ecdf)
       }
       self$state = list(
         ecdf_ = ecdf_
@@ -49,24 +44,24 @@ PipeOpUniform = R6::R6Class(
 )
 
 
-library("mlr3")
-
-# no group variable
-task = tsk("iris")
-gr = Graph$new()
-gr$add_pipeop(PipeOpUniform$new())
-result = gr$train(task)
-result[[1]]$data()
-gr$predict(task)
-
-# group variable
-dt = tsk("iris")$data()
-dt[, monthid := c(rep(1, 50), rep(2, 50), rep(3, 50))]
-task = as_task_classif(dt, target = "Species")
-task$set_col_roles("monthid", "group")
-gr = Graph$new()
-gr$add_pipeop(PipeOpUniform$new())
-result = gr$train(task)
-result[[1]]$data()
-preds = gr$predict(task)
-preds$uniformization.output$data()
+# library("mlr3")
+#
+# # no group variable
+# task = tsk("iris")
+# gr = Graph$new()
+# gr$add_pipeop(PipeOpUniform$new())
+# result = gr$train(task)
+# result[[1]]$data()
+# gr$predict(task)
+#
+# # group variable
+# dt = tsk("iris")$data()
+# dt[, monthid := c(rep(1, 50), rep(2, 50), rep(3, 50))]
+# task = as_task_classif(dt, target = "Species")
+# task$set_col_roles("monthid", "group")
+# gr = Graph$new()
+# gr$add_pipeop(PipeOpUniform$new())
+# result = gr$train(task)
+# result[[1]]$data()
+# preds = gr$predict(task)
+# preds$uniformization.output$data()

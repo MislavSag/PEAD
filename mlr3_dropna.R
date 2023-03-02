@@ -26,15 +26,15 @@ PipeOpDropNA = R6::R6Class(
     }
   )
 )
-
-# no group variable
-task = tsk("iris")
-new_dt = data.table("setosa", 1,2, 3, NA)
-setnames(new_dt, names(task$data()))
-task$rbind(new_dt)
-task$data()
-gr = Graph$new()
-gr$add_pipeop(PipeOpDropNA$new())
-result = gr$train(task)
-result[[1]]$data()
-gr$predict(task)
+#
+# # no group variable
+# task = tsk("iris")
+# new_dt = data.table("setosa", 1,2, 3, NA)
+# setnames(new_dt, names(task$data()))
+# task$rbind(new_dt)
+# task$data()
+# gr = Graph$new()
+# gr$add_pipeop(PipeOpDropNA$new())
+# result = gr$train(task)
+# result[[1]]$data()
+# gr$predict(task)

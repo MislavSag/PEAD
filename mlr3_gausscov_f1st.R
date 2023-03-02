@@ -1,14 +1,3 @@
-library(gausscov)
-library(paradox)
-library(mlr3)
-library(mlr3misc)
-library(mlr3filters)
-library(checkmate)
-library(R6)
-library(backports)
-
-
-
 FilterGausscovF1st = R6::R6Class(
   "FilterGausscovF1st",
   inherit = mlr3filters::Filter,
@@ -58,20 +47,18 @@ FilterGausscovF1st = R6::R6Class(
 
       # empty vector with variable names as vector names
       scores = rep(-1, length(task$feature_names))
-      scores = set_names(scores, task$feature_names)
+      scores = mlr3misc::set_names(scores, task$feature_names)
 
       # calculate gausscov pvalues
       pv = self$param_set$values
-      print(pv)
       x = as.matrix(task$data(cols = task$feature_names))
       if (task$task_type == "classif") {
         y = as.matrix(as.integer(task$truth()))
       } else {
         y = as.matrix(task$truth())
       }
-      res = invoke(gausscov::f1st, y = y, x = x, .args = pv)
+      res = mlr3misc::invoke(gausscov::f1st, y = y, x = x, .args = pv)
       res_1 = res[[1]]
-      print(res_1)
       res_1 = res_1[res_1[, 1] != 0, , drop = FALSE]
       scores[res_1[, 1]] = abs(res_1[, 4])
       sort(scores, decreasing = TRUE)
@@ -79,7 +66,7 @@ FilterGausscovF1st = R6::R6Class(
   )
 )
 
-mlr_filters$add("gausscov_f1st", FilterGausscovF1st)
+# mlr_filters$add("gausscov_f1st", FilterGausscovF1st)
 
 # # no group variable
 # task = tsk("iris")

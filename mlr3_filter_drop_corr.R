@@ -1,9 +1,3 @@
-library(mlr3)
-library(paradox)
-library(mlr3filters)
-library(mlr3pipelines)
-
-
 PipeOpDropCorr = R6::R6Class(
   "PipeOpDropCorr",
   inherit = mlr3pipelines::PipeOpTaskPreprocSimple,
@@ -32,7 +26,7 @@ PipeOpDropCorr = R6::R6Class(
       data = task$data(cols = fn)
       pv = self$param_set$values
 
-      cm = invoke(stats::cor, x = data, use = pv$use, method = pv$method)
+      cm = mlr3misc::invoke(stats::cor, x = data, use = pv$use, method = pv$method)
       cm[upper.tri(cm)] <- 0
       diag(cm) <- 0
       cm <- abs(cm)
