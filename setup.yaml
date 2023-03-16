@@ -1,0 +1,15 @@
+apiVersion: batch/v1  # Which version of the Kubernetes API you're using to create this object
+kind: Job             # What kind of object you want to create
+metadata:
+  name: peadv2 # Data that helps uniquely identify the object, including a name string, UID, and optional namespace
+  namespace: strategies
+spec:
+  template:
+    spec:
+      containers:
+      - name: peadv2
+        image: cgskbsregistry.azurecr.io/pead:latest
+      restartPolicy: Never
+      nodeSelector:
+        agentpool: strong
+  backoffLimit: 2  # specifies the number of re-tries before job controller gives up

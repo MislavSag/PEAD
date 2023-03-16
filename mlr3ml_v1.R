@@ -17,6 +17,7 @@ library(AzureStor)
 blob_key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJLu1wVE6HT+ASt0DdAPQ=="
 endpoint = "https://snpmarketdata.blob.core.windows.net/"
 BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
+mlr3_save_path = "D:/mlfin/cvresults-pead"
 
 
 
@@ -311,9 +312,8 @@ design
 
 # NESTED CV BENCHMARK -----------------------------------------------------
 # nested for loop
-future::plan("multisession", workers = 4L)
-bmrs = list()
-for (i in seq_len(customi$iters)) { # seq_len(custom$iters)
+# future::plan("multisession", workers = 4L)
+for (i in 17:tail(customi$iters, 1)) { # seq_len(customi$iters)
 
   # debug
   # i = 1
@@ -339,16 +339,19 @@ for (i in seq_len(customi$iters)) { # seq_len(custom$iters)
 
   # nested CV for one round
   design = benchmark_grid(
-    tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
+    tasks = list(task_ret_week, task_ret_month), # task_ret_month, task_ret_month2
     learners = at,
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = TRUE)
-  bmrs[[i]] = bmr
+
+  # save locally and to list
+  time_ = format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  saveRDS(bmr, file.path(mlr3_save_path, paste0(i, "-", time_, ".rds")))
 }
 
 # inspect single benchmark
-bmr_ = bmrs[[2]]
+bmr_ = readRDS("D:/mlfin/cvresults-pead/1-20230306111336.rds")
 bmr_$aggregate(msrs(c("regr.mse", "linex", "regr.mae")))
 predicitons = as.data.table(as.data.table(bmr_)[, "prediction"][1][[1]][[1]])
 predicitons[, `:=`(

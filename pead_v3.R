@@ -32,6 +32,9 @@ pd = reticulate::import("pandas", convert = FALSE)
 builtins = import_builtins(convert = FALSE)
 main = import_main(convert = FALSE)
 tsfel = reticulate::import("tsfel", convert = FALSE)
+tsfresh = reticulate::import("tsfresh", convert = FALSE)
+warnigns = reticulate::import("warnings", convert = FALSE)
+warnigns$filterwarnings('ignore')
 
 
 
@@ -55,7 +58,6 @@ fredr_set_key(Sys.getenv("FRED-KEY"))
 
 # parameters
 strategy = "PEAD"  # PEAD (for predicting post announcement drift) or PRE (for predicting pre announcement)
-start_holdout_date = as.Date("2021-06-01") # observations after this date belongs to holdout set
 events_data <- "intersection" # data source, one of "fmp", "investingcom", "intersection"
 
 
@@ -65,7 +67,7 @@ events_data <- "intersection" # data source, one of "fmp", "investingcom", "inte
 arr <- tiledb_array("s3://equity-usa-earningsevents", as.data.frame = TRUE)
 events <- arr[]
 events <- as.data.table(events)
-setorder(events)
+setorder(events, date)
 
 # coarse filtering
 events <- events[date < Sys.Date()]                 # remove announcements for today
@@ -179,6 +181,7 @@ spy <- prices_dt[symbol == "SPY", .(symbol, date, open, high, low, close, volume
 
 # REGRESSION LABELING ----------------------------------------------------------
 # calculate returns
+setorder(prices_dt, symbol, date)
 prices_dt[, ret_5 := shift(close, -5L, "shift") / shift(close, -1L, "shift") - 1, by = "symbol"]   # PEAD
 prices_dt[, ret_22 := shift(close, -21L, "shift") / shift(close, -1L, "shift") - 1, by = "symbol"] # PEAD
 prices_dt[, ret_44 := shift(close, -43L, "shift") / shift(close, -1L, "shift") - 1, by = "symbol"] # PEAD
@@ -393,12 +396,12 @@ RollingGpdFeatures = RollingGpdInit$get_rolling_features(OhlcvInstance)
 # theft catch22 features
 print("Calculate Catch22 features.")
 RollingTheftInit = RollingTheft$new(windows = c(5, 22, 22 * 3, 22 * 12),
-                                    workers = 8L, at = at_, lag = lag_,
+                                    workers = 4L, at = at_, lag = lag_,
                                     features_set = c("catch22", "feasts"))
 RollingTheftCatch22Features = RollingTheftInit$get_rolling_features(OhlcvInstance)
 gc()
 
-# theft tsfeatures features
+# tsfeatures features
 print("Calculate tsfeatures features.")
 RollingTsfeaturesInit = RollingTsfeatures$new(windows = c(22 * 3, 22 * 6),
                                               workers = 8L, at = at_,
@@ -408,10 +411,15 @@ gc()
 
 # theft tsfel features, Must be alone, because number of workers have to be 1L
 print("Calculate tsfel features.")
+
+RollingTheftInit = RollingTheft$new(windows = c(22 * 3), workers = 1L,
+                                    at = 1:70, lag = lag_,  features_set = "TSFEL")
+test = Ohlcv$new(prices_dt[1:70, .(symbol, date, open, high, low, close, volume)], date_col = "date")
+RollingTheftTsfelFeatures = suppressMessages(RollingTheftInit$get_rolling_features(test))
+
+
 RollingTheftInit = RollingTheft$new(windows = c(22 * 3, 22 * 12), workers = 1L,
-                                    at = at_, lag = lag_,  features_set = "tsfel")
-RollingTheftTsfelFeatures = suppressMessages(RollingTheftInit$get_rolling_features(OhlcvInstance))
-gc()
+                                    at = at_, lag = lag_,  features_set = "TSFEL")
 
 # quarks
 RollingQuarksInit = RollingQuarks$new(windows = 22 * 6, workers = 6L, at = at_,
@@ -442,29 +450,30 @@ gc()
 # merge all features test
 features_set <- Reduce(function(x, y) merge(x, y, by = c("symbol", "date"),
                                             all.x = TRUE, all.y = FALSE),
-                       list(RollingBidAskFeatures,
-                            RollingBackCusumFeatures,
+                       list(OhlcvFeaturesSetSample,
+                            # RollingBidAskFeatures,
+                            # RollingBackCusumFeatures,
                             # RollingExuberFeatures,
-                            RollingForecatsFeatures,
+                            # RollingForecatsFeatures,
                             # RollingGasFeatures,
                             # RollingGpdFeatures,
                             RollingTheftCatch22Features,
-                            RollingTheftTsfelFeatures,
-                            RollingTsfeaturesFeatures,
-                            RollingQuarksFeatures,
+                            RollingTheftTsfelFeatures
+                            # RollingTsfeaturesFeatures,
+                            # RollingQuarksFeatures,
                             # RollingTvgarchFeatures
-                            RollingWaveletArimaFeatures
+                            # RollingWaveletArimaFeatures
                        ))
 features <- features_set[OhlcvFeaturesSetSample, on = c("symbol", "date"), roll = Inf]
+
+# check
 head(OhlcvFeaturesSetSample[, 1:5])
 head(features_set[, 1:5])
 head(features[, 1:5])
 
 # save ohlcv features and merged features
-# time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-# fwrite(OhlcvFeaturesSet, paste0("D:/features/OhlcvFeatues-PEAD-", time_, ".csv"))
-# fwrite(features, paste0("D:/features-PEAD-", time_, ".csv"))
-# fwrite(RollingGasFeatures, paste0("D:/features-PEAD-GPD", time_, ".csv"))
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(features_set, paste0("D:/features-PEAD-", time_, ".csv"))
 
 # import features
 # list.files("D:/features")
