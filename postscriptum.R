@@ -5,6 +5,104 @@ library(AzureStor)
 
 
 
+# setup
+blob_key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJLu1wVE6HT+ASt0DdAPQ=="
+endpoint = "https://snpmarketdata.blob.core.windows.net/"
+BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
+mlr3_save_path = "D:/mlfin/cvresults-pead-v2"
+
+# utils
+id_cols = c("symbol", "date", "yearmonthid", "..row_id")
+
+# set files with benchmarks
+results_files = file.info(list.files(mlr3_save_path, full.names = TRUE))
+# res_files = res_files[order(res_files$ctime), ]
+bmr_files = rownames(results_files)
+
+# prediction function
+get_predictions_by_task = function(bmr_file) {
+
+  # debug
+  # bmr_file = bmr_files[1]
+
+  # get bmr object
+  print(bmr_file)
+  bmr = readRDS(bmr_file)
+  bmr_dt = as.data.table(bmr)
+
+  # get backends
+  task_names = unlist(lapply(bmr_dt$task, function(x) x$id))
+  backs = lapply(bmr_dt$task, function(task) {
+    task$backend$data(cols = id_cols, rows = 1:bmr_dt$task[[1]]$nrow)
+  })
+  names(backs) = task_names
+  lapply(backs, setnames, "..row_id", "row_ids")
+
+  # get predictions
+  predictions = lapply(bmr_dt$prediction, function(x) as.data.table(x))
+  names(predictions) <- task_names
+
+  # merge backs and predictions
+  predictions <- lapply(task_names, function(x) {
+    y = backs[[x]][predictions[[x]], on = "row_ids"]
+    y[, date := as.Date(date, origin = "1970-01-01")]
+    cbind(task_name = x, y)
+  })
+  predictions = rbindlist(predictions)
+  return(predictions)
+}
+predictions = lapply(bmr_files, get_predictions_by_task)
+
+# hit ratio
+predictions_dt = rbindlist(predictions, idcol = "fold")
+predictions_dt[, `:=`(
+  truth_sign = as.factor(sign(truth)),
+  response_sign = as.factor(sign(response))
+)]
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = "task_name"]
+predictions_dt[response > 0.1, mlr3measures::acc(truth_sign, response_sign), by = "task_name"]
+predictions_dt[response > 0.2, mlr3measures::acc(truth_sign, response_sign), by = "task_name"]
+predictions_dt[response > 0.3, mlr3measures::acc(truth_sign, response_sign), by = "task_name"]
+predictions_dt[response > 0.5, mlr3measures::acc(truth_sign, response_sign), by = "task_name"]
+predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = "task_name"]
+
+# save to azure for QC backtest
+cont = storage_container(BLOBENDPOINT, "qc-backtest")
+lapply(unique(predictions_dt$task_name), function(x) {
+  # prepare data
+  y = predictions_dt[task_name == x]
+  y = y[, .(symbol, date, response)]
+  y = y[, .(
+    symbol = paste0(symbol, collapse = "|"),
+    response = paste0(response, collapse = "|")
+  ), by = date]
+  y[, date := as.character(date)]
+
+  # save to azure blob
+  print(y)
+  storage_write_csv(y, cont, paste0("pead_", x, ".csv"))
+  # universe = y[, .(date, symbol)]
+  # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
+
+})
+
+
+
+# performance by varioues measures
+bmr_$aggregate(msrs(c("regr.mse", "linex", "regr.mae")))
+predicitons = as.data.table(as.data.table(bmr_)[, "prediction"][1][[1]][[1]])
+
+
+
+
+
+
+
+
+
+
+
+
 # linex measure
 source("Linex.R")
 mlr_measures$add("linex", Linex)
@@ -61,10 +159,6 @@ setorder(DT, date)
 # add rowid column
 DT[, row_ids := 1:.N]
 
-# check saved files
-res_files = file.info(list.files(mlr3_save_path, full.names = TRUE))
-res_files = res_files[order(res_files$ctime), ]
-
 ### REGRESSION
 # task with future week returns as target
 target_ = colnames(DT)[grep("^ret_excess_stand_5", colnames(DT))]
@@ -90,12 +184,28 @@ outer_split <- function(task, train_length = 36, test_length = 2, test_length_ou
 }
 customo = outer_split(task_ret_week)
 
-
-# function to check infividual benchmark result
-bmrs = lapply(rownames(res_files[2:nrow(res_files),]), readRDS)
+# download objects from azure
+cont = storage_container(BLOBENDPOINT, "peadcv")
+azure_files = unlist(list_storage_files(cont)["name"], use.names = FALSE)
+for (azf in azure_files) {
+  # azf = azure_files[1]
+  if (azf %in% list.files(mlr3_save_path)) {
+    print(azf)
+    next
+  }
+  storage_download(cont,
+                   src = azf,
+                   dest = file.path(mlr3_save_path, azf))
+}
 
 # get predictions function
-get_predictions_by_task = function(bmr, DT) {
+res_files = file.info(list.files(mlr3_save_path, full.names = TRUE))
+res_files = res_files[order(res_files$ctime), ]
+bmr_files = rownames(res_files[2:nrow(res_files),])
+get_predictions_by_task = function(bmr_file, DT) {
+  # bmr_file = bmr_files[39]
+  print(bmr_file)
+  bmr = readRDS(bmr_file)
   bmr_dt = as.data.table(bmr)
   task_names = lapply(bmr_dt$task, function(x) x$id)
   # task_names = lapply(bmr_dt$task, function(x) x$id)
@@ -107,7 +217,7 @@ get_predictions_by_task = function(bmr, DT) {
   })
   return(predictions)
 }
-predictions = lapply(bmrs, get_predictions_by_task, DT = DT)
+predictions = lapply(bmr_files, get_predictions_by_task, DT = DT)
 
 # choose task
 task_name = "task_ret_week"

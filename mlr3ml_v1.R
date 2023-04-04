@@ -17,31 +17,34 @@ library(AzureStor)
 blob_key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJLu1wVE6HT+ASt0DdAPQ=="
 endpoint = "https://snpmarketdata.blob.core.windows.net/"
 BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
-mlr3_save_path = "D:/mlfin/cvresults-pead"
+mlr3_save_path = "D:/mlfin/cvresults-pead-v2"
 
+# utils https://stackoverflow.com/questions/1995933/number-of-months-between-two-dates
+monnb <- function(d) {
+  lt <- as.POSIXlt(as.Date(d, origin="1900-01-01"))
+  lt$year*12 + lt$mon }
+mondf <- function(d1, d2) { monnb(d2) - monnb(d1) }
 
 
 # PREPARE DATA ------------------------------------------------------------
 # read predictors
-DT <- fread("D:/features/pead-predictors.csv")
-
-# save to azure
-cont <- storage_container(BLOBENDPOINT, "test")
-cols_ = colnames(DT)[1:50]
-sample_ <- DT[, ..cols_]
-storage_write_csv(as.data.frame(sample_), cont, file = "mlr3test.csv", col_names = TRUE)
+files_ <- file.info(list.files("D:/features", full.names = TRUE, pattern = "pead|PEAD|Pead"))
+files_[order(files_$ctime), ]
+DT <- fread("D:/features/pead-predictors-20230402172611.csv")
+setorder(DT, date)
+DT[, .(date, date_rolling)]
 
 # create group variable
-DT[, monthid := paste0(data.table::year(as.Date(date, origin = "1970-01-01")),
-                       data.table::month(as.Date(date, origin = "1970-01-01")))]
-DT[, monthid := as.integer(monthid)]
-setorder(DT, monthid)
+DT[, yearmonthid := round(date_rolling, digits = "month")]
+DT[, .(date, date_rolling, yearmonthid)]
+DT[, yearmonthid := as.integer(yearmonthid)]
+DT[, .(date, date_rolling, yearmonthid)]
 
 # define predictors
 cols_non_features <- c("symbol", "date", "time", "right_time",
                        "bmo_return", "amc_return",
                        "open", "high", "low", "close", "volume", "returns",
-                       "monthid"
+                       "yearmonthid", "date_rolling"
                        )
 targets <- c(colnames(DT)[grep("ret_excess", colnames(DT))])
 cols_features <- setdiff(colnames(DT), c(cols_non_features, targets))
@@ -58,8 +61,8 @@ print(paste0("Removing feature with 0 standard deviation: ", remove_cols))
 cols_features <- setdiff(cols_features, remove_cols)
 
 # convert variables with low number of unique values to factors
-int_numbers = DT[, ..cols_features][, lapply(.SD, function(x) all(as.integer(x)==x) & x > 0.99)]
-int_cols = na.omit(colnames(DT[, ..cols_features])[as.matrix(int_numbers)[1,]])
+int_numbers = na.omit(DT[, ..cols_features])[, lapply(.SD, function(x) all(floor(x) == x))]
+int_cols = colnames(DT[, ..cols_features])[as.matrix(int_numbers)[1,]]
 factor_cols = DT[, ..int_cols][, lapply(.SD, function(x) length(unique(x)))]
 factor_cols = as.matrix(factor_cols)[1, ]
 factor_cols = factor_cols[factor_cols <= 100]
@@ -70,114 +73,164 @@ DT = DT[, (names(factor_cols)) := lapply(.SD, as.factor), .SD = names(factor_col
 # we can skeep this step
 DT = na.omit(DT, cols = setdiff(targets, colnames(DT)[grep("extreme", colnames(DT))]))
 
+# change IDate to date, because of error
+# Assertion on 'feature types' failed: Must be a subset of
+# {'logical','integer','numeric','character','factor','ordered','POSIXct'},
+# but has additional elements {'IDate'}.
+DT[, date := as.POSIXct(date, tz = "UTC")]
+DT[, .(symbol,date, date_rolling, yearmonthid)]
+
 # sort
 setorder(DT, date)
 
 
 
 # TASKS -------------------------------------------------------------------
-# task with aroundzero bins and weekly target
-target_ = colnames(DT)[grep("around.*5", colnames(DT))]
-cols_ = c(target_, "monthid", cols_features)
-task_aroundzero_week <- as_task_classif(DT[, ..cols_],
-                                        id = "aroundzero_week",
-                                        target = target_)
+# id coluns we always keep
+id_cols = c("symbol", "date", "yearmonthid")
 
-# task with aroundzero binsa and month target
-target_ = targets[grep("around.*22", targets)]
-cols_ = c(target_, "monthid", cols_features)
-task_aroundzero_month <- as_task_classif(DT[, ..cols_],
-                                         id = "aroundzero_month",
-                                         target = target_)
-
-# task with aroundzero binsa and quarter target
-target_ = targets[grep("around.*66", targets)]
-cols_ = c(target_, "monthid", cols_features)
-task_aroundzero_quarter <- as_task_classif(DT[, ..cols_],
-                                           id = "aroundzero_quarter",
-                                           target = target_)
+# # task with aroundzero bins and weekly target
+# target_ = colnames(DT)[grep("around.*5", colnames(DT))]
+# cols_ = c(target_, "monthid", cols_features)
+# task_aroundzero_week <- as_task_classif(DT[, ..cols_],
+#                                         id = "aroundzero_week",
+#                                         target = target_)
+#
+# # task with aroundzero binsa and month target
+# target_ = targets[grep("around.*22", targets)]
+# cols_ = c(target_, "monthid", cols_features)
+# task_aroundzero_month <- as_task_classif(DT[, ..cols_],
+#                                          id = "aroundzero_month",
+#                                          target = target_)
+#
+# # task with aroundzero binsa and quarter target
+# target_ = targets[grep("around.*66", targets)]
+# cols_ = c(target_, "monthid", cols_features)
+# task_aroundzero_quarter <- as_task_classif(DT[, ..cols_],
+#                                            id = "aroundzero_quarter",
+#                                            target = target_)
 
 ### REGRESSION
 # task with future week returns as target
 target_ = colnames(DT)[grep("^ret_excess_stand_5", colnames(DT))]
-cols_ = c(target_, "monthid", cols_features)
+cols_ = c(id_cols, target_, cols_features)
 task_ret_week <- as_task_regr(DT[, ..cols_],
                               id = "task_ret_week",
                               target = target_)
 
 # task with future month returns as target
 target_ = colnames(DT)[grep("^ret_excess_stand_22", colnames(DT))]
-cols_ = c(target_, "monthid", cols_features)
+cols_ = c(id_cols, target_, cols_features)
 task_ret_month <- as_task_regr(DT[, ..cols_],
                                id = "task_ret_month",
                                target = target_)
 
-# task with future 2 months returns as target
-target_ = colnames(DT)[grep("^ret_excess_stand_44", colnames(DT))]
-cols_ = c(target_, "monthid", cols_features)
-task_ret_month2 <- as_task_regr(DT[, ..cols_],
-                                id = "task_ret_month2",
-                                target = target_)
-
-# task with future 2 months returns as target
-target_ = colnames(DT)[grep("^ret_excess_stand_66", colnames(DT))]
-cols_ = c(target_, "monthid", cols_features)
-task_ret_quarter <- as_task_regr(DT[, ..cols_],
-                                 id = "task_ret_quarter",
-                                 target = target_)
-
-
-# create group and holdout set
-# create_validation_set <- function(task, validation_month_start = 20226) {
-#   # add group role
-#   task$set_col_roles("monthid", "group")
-#   groups = task$groups
+# # task with future 2 months returns as target
+# target_ = colnames(DT)[grep("^ret_excess_stand_44", colnames(DT))]
+# cols_ = c(target_, "monthid", cols_features)
+# task_ret_month2 <- as_task_regr(DT[, ..cols_],
+#                                 id = "task_ret_month2",
+#                                 target = target_)
 #
-#   # add validation set
-#   val_ind <- min(which(groups$group == validation_month_start)):nrow(groups)
-#   task$set_row_roles(rows = val_ind, role = "holdout")
-#   task$set_col_roles("monthid", "feature")
-# }
-# create_validation_set(task_aroundzero_month)
+# # task with future 2 months returns as target
+# target_ = colnames(DT)[grep("^ret_excess_stand_66", colnames(DT))]
+# cols_ = c(target_, "monthid", cols_features)
+# task_ret_quarter <- as_task_regr(DT[, ..cols_],
+#                                  id = "task_ret_quarter",
+#                                  target = target_)
 
-# inner custom rolling window resampling
-inner_split  <- function(task, train_length = 36, test_length = 2) {
-  custom = rsmp("custom")
-  task_ <- task$clone()
-  groups = cbind(id = 1:task_$nrow, task_$data(cols = "monthid"))
-  groups_v = groups[, unique(monthid)]
-  rm(task_)
-  train_groups <- lapply(1:(length(groups_v)-train_length-test_length), function(x) groups_v[x:(x+train_length)])
-  test_groups <- lapply(1:(length(groups_v)-train_length-test_length), function(x) groups_v[(x+train_length+1):(x+train_length+test_length)])
-  train_sets <- lapply(train_groups, function(mid) groups[monthid %in% mid, id])
-  test_sets <- lapply(test_groups, function(mid) groups[monthid %in% mid, id])
-  custom$instantiate(task, train_sets, test_sets)
-  return(custom)
+# set roles for symbol, date and yearmonth_id
+task_ret_week$col_roles$feature = setdiff(task_ret_week$col_roles$feature,
+                                          id_cols)
+task_ret_month$col_roles$feature = setdiff(task_ret_month$col_roles$feature,
+                                           id_cols)
+
+# create train, tune and test set
+nested_cv_split = function(task,
+                           train_length = 36,
+                           tune_length = 2,
+                           test_length = 1) {
+
+  # create cusom CV's for inner and outer sampling
+  custom_inner = rsmp("custom")
+  custom_outer = rsmp("custom")
+
+  # get year month id data
+  # task = task_ret_week$clone()
+  task_ = task$clone()
+  yearmonthid_ = task_$backend$data(cols = c("yearmonthid", "..row_id"),
+                                    rows = 1:task_$nrow)
+  stopifnot(all(task_$row_ids == yearmonthid_$`..row_id`))
+  groups_v = yearmonthid_[, unlist(unique(yearmonthid))]
+
+  # util vars
+  start_folds = 1:(length(groups_v)-train_length-tune_length-test_length)
+  get_row_ids = function(mid) unlist(yearmonthid_[yearmonthid %in% mid, 2], use.names = FALSE)
+
+  # create train data
+  train_groups <- lapply(start_folds,
+                         function(x) groups_v[x:(x+train_length-1)])
+  train_sets <- lapply(train_groups, get_row_ids)
+
+  # create tune set
+  tune_groups <- lapply(start_folds,
+                        function(x) groups_v[(x+train_length):(x+train_length+tune_length-1)])
+  tune_sets <- lapply(tune_groups, get_row_ids)
+
+  # test train and tune
+  test_1 = vapply(seq_along(train_groups), function(i) {
+    mondf(
+      tail(as.Date(train_groups[[i]], origin = "1970-01-01"), 1),
+      head(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1)
+    )
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_1 == 1))
+  test_2 = vapply(seq_along(train_groups), function(i) {
+    unlist(head(tune_sets[[i]], 1) - tail(train_sets[[i]], 1))
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_2 == 1))
+
+  # create test sets
+  insample_length = train_length + tune_length
+  test_groups <- lapply(start_folds,
+                        function(x) groups_v[(x+insample_length):(x+insample_length+test_length-1)])
+  test_sets <- lapply(test_groups, get_row_ids)
+
+  # test tune and test
+  test_3 = vapply(seq_along(train_groups), function(i) {
+    mondf(
+      tail(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1),
+      head(as.Date(test_groups[[i]], origin = "1970-01-01"), 1)
+    )
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_1 == 1))
+  test_4 = vapply(seq_along(train_groups), function(i) {
+    unlist(head(test_sets[[i]], 1) - tail(tune_sets[[i]], 1))
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_2 == 1))
+
+  # create inner and outer resamplings
+  custom_inner$instantiate(task, train_sets, tune_sets)
+  inner_sets = lapply(seq_along(train_groups), function(i) {
+    c(train_sets[[i]], tune_sets[[i]])
+  })
+  custom_outer$instantiate(task, inner_sets, test_sets)
+  return(list(custom_inner = custom_inner, custom_outer = custom_outer))
 }
-customi = inner_split(task_aroundzero_month)
+custom_cvs = nested_cv_split(task_ret_week)
+custom_inner = custom_cvs$custom_inner
+custom_outer = custom_cvs$custom_outer
 
-# outer custom rolling window resampling
-outer_split <- function(task, train_length = 36, test_length = 2, test_length_out = 1) {
-  customo = rsmp("custom")
-  task_ <- task$clone()
-  groups = cbind(id = 1:task_$nrow, task_$data(cols = "monthid"))
-  groups_v = groups[, unique(monthid)]
-  rm(task_)
-  insample_length = train_length + test_length
-  train_groups_out <- lapply(1:(length(groups_v)-train_length-test_length), function(x) groups_v[x:(x+insample_length)])
-  test_groups_out <- lapply(1:(length(groups_v)-train_length-test_length),
-                             function(x) groups_v[(x+insample_length):(x+insample_length+test_length_out-1)])
-  train_sets_out <- lapply(train_groups_out, function(mid) groups[monthid %in% mid, id])
-  test_sets_out <- lapply(test_groups_out, function(mid) groups[monthid %in% mid, id])
-  customo$instantiate(task, train_sets_out, test_sets_out)
-}
-customo = outer_split(task_aroundzero_month)
+# test set start after train set
+all(vapply(1:custom_inner$iters, function(i) {
+  (tail(custom_inner$train_set(i), 1) + 1) == custom_inner$test_set(i)[1]
+}, FUN.VALUE = logical(1L)))
 
-# custom checks
-(tail(customi$train_set(1), 1) + 1) == customi$test_set(1)[1] # test set start after train set 1
-(tail(customi$train_set(2), 1) + 1) == customi$test_set(2)[1] # test set start after train set 2
-all(c(customi$train_set(1), customi$test_set(1)) == customo$train_set(1)) # train set in outersample contains ids in innersample 1
-all(c(customi$train_set(2), customi$test_set(2)) == customo$train_set(2)) # train set in outersample contains ids in innersample 1
+# train set in outersample contains ids in innersample 1
+all(vapply(1:custom_inner$iters, function(i) {
+  all(c(custom_inner$train_set(i),
+        custom_inner$test_set(i)) == custom_outer$train_set(i))
+}, FUN.VALUE = logical(1L)))
 
 
 
@@ -313,7 +366,7 @@ design
 # NESTED CV BENCHMARK -----------------------------------------------------
 # nested for loop
 # future::plan("multisession", workers = 4L)
-for (i in 17:tail(customi$iters, 1)) { # seq_len(customi$iters)
+for (i in 1:custom_inner$iters) {
 
   # debug
   # i = 1
@@ -321,11 +374,13 @@ for (i in 17:tail(customi$iters, 1)) { # seq_len(customi$iters)
 
   # inner resampling
   custom_ = rsmp("custom")
-  custom_$instantiate(task_aroundzero_month, list(customi$train_set(i)), list(customi$test_set(i)))
+  custom_$instantiate(task_ret_week,
+                      list(custom_inner$train_set(i)),
+                      list(custom_inner$test_set(i)))
 
   # auto tuner
   at = auto_tuner(
-    method = "mbo", # tnr("random_search", batch_size = 3),
+    tuner = tnr("mbo"), # tnr("random_search", batch_size = 3),
     learner = graph_learner,
     resampling = custom_,
     measure = msr("linex"),
@@ -335,7 +390,7 @@ for (i in 17:tail(customi$iters, 1)) { # seq_len(customi$iters)
 
   # outer resampling
   customo_ = rsmp("custom")
-  customo_$instantiate(task_aroundzero_month, list(customo$train_set(i)), list(customo$test_set(i)))
+  customo_$instantiate(task_ret_week, list(custom_outer$train_set(i)), list(custom_outer$test_set(i)))
 
   # nested CV for one round
   design = benchmark_grid(

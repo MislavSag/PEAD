@@ -224,9 +224,10 @@ prices_dt[, `:=`(ret_5 = NULL, ret_22 = NULL, ret_44 = NULL, ret_66 = NULL,
                  ret_5_excess = NULL, ret_22_excess = NULL, ret_44_excess = NULL, ret_66_excess = NULL)]
 
 # remove NA values
-prices_dt <- na.omit(prices_dt, cols = c("symbol", "date", "ret_excess_stand_5",
-                                         "ret_excess_stand_22",  "ret_excess_stand_44",
-                                         "ret_excess_stand_66"))
+# This was uncomment in first version
+# prices_dt <- na.omit(prices_dt, cols = c("symbol", "date", "ret_excess_stand_5",
+#                                          "ret_excess_stand_22",  "ret_excess_stand_44",
+#                                          "ret_excess_stand_66"))
 
 
 
@@ -288,11 +289,6 @@ setorderv(dataset, c("symbol", "date"))
 
 
 # FEATURES ----------------------------------------------------------------
-# prepare arguments for features
-prices_events <- merge(prices_dt, dataset[, .(symbol, date, eps)],
-                       by = c("symbol", "date"), all.x = TRUE, all.y = FALSE)
-at_ <- which(!is.na(prices_events$eps))
-
 # Ohlcv feaures
 OhlcvInstance = Ohlcv$new(prices_dt[, .(symbol, date, open, high, low, close, volume)],
                           date_col = "date")
@@ -307,6 +303,12 @@ if (strategy == "PEAD") {
 # free memory
 rm(prices_events)
 gc()
+
+# prepare arguments for features
+prices_events <- merge(prices_dt, dataset[, .(symbol, date, eps)],
+                       by = c("symbol", "date"), all.x = TRUE, all.y = FALSE)
+at_ <- which(!is.na(prices_events$eps))
+
 
 # Features from OHLLCV
 print("Calculate Ohlcv features.")
@@ -326,31 +328,61 @@ OhlcvFeaturesSetSample[symbol == "ZYXI", .(symbol, date)]
 rm(OhlcvFeaturesSet)
 gc()
 
+# save Ohlcv data
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(OhlcvFeaturesSetSample, paste0("D:/features/PEAD-OhlcvFeaturesSetSample-", time_, ".csv"))
+
+# util function that returns most recently saved predictor object
+get_latest = function(predictors = "RollingExuberFeatures") {
+  f = file.info(list.files("D:/features", full.names = TRUE, pattern = predictors))
+  latest = tail(f[order(f$ctime), ], 1)
+  row.names(latest)
+}
+
+# import saved RollingBidAskFeatures data
+RollingBidAskFeatures = fread(get_latest("RollingBidAskFeatures"))
+
+# get new data
+new_dataset = fsetdiff(dataset[, .(symbol, date = as.IDate(date))],
+                       RollingBidAskFeatures[, .(symbol, date)])
+new_data <- merge(prices_dt, dataset[new_dataset[, .(symbol, date)]],
+                  by = c("symbol", "date"), all.x = TRUE, all.y = FALSE)
+at_ <- which(!is.na(new_data$eps))
+
 # BidAsk features
 print("Calculate BidAsk features.")
 RollingBidAskInstance <- RollingBidAsk$new(windows = c(5, 22, 22 * 6),
-                                           workers = 8L,
+                                           workers = 6L,
                                            at = at_,
                                            lag = lag_,
                                            methods = c("EDGE", "Roll", "OHLC", "OHL.CHL"))
-RollingBidAskFeatures = RollingBidAskInstance$get_rolling_features(OhlcvInstance)
+RollingBidAskFeatures_new = RollingBidAskInstance$get_rolling_features(OhlcvInstance)
 gc()
 # DEBUG
 head(dataset[, .(symbol, date)])
 head(RollingBidAskFeatures[symbol == "AA", .(symbol, date)])
 
+# save Ohlcv data
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingBidAskFeatures, paste0("D:/features/PEAD-RollingBidAskFeatures-", time_, ".csv"))
+
 # BackCUSUM features
 print("Calculate BackCUSUM features.")
-RollingBackcusumInit = RollingBackcusum$new(windows = c(22 * 3, 22 * 6), workers = 8L,
+RollingBackcusumInit = RollingBackcusum$new(windows = c(22 * 3, 22 * 6), workers = 6L,
                                             at = at_, lag = lag_,
                                             alternative = c("greater", "two.sided"),
                                             return_power = c(1, 2))
 RollingBackCusumFeatures = RollingBackcusumInit$get_rolling_features(OhlcvInstance)
+gc()
+
+# save Ohlcv data
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingBackCusumFeatures, paste0("D:/features/PEAD-RollingBackCusumFeatures-", time_, ".csv"))
 
 # Exuber features
 print("Calculate Exuber features.")
 RollingExuberInit = RollingExuber$new(windows = c(100, 300, 600),
-                                      workers = 8L,
+                                      workers = 6L,
                                       at = at_,
                                       lag = lag_,
                                       exuber_lag = 1L)
@@ -359,18 +391,26 @@ head(dataset[, .(symbol, date)])
 head(RollingExuberFeatures[symbol == "A", .(symbol, date)])
 gc()
 
+# save
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingExuberFeatures, paste0("D:/features/PEAD-RollingExuberFeatures-", time_, ".csv"))
+
 # Forecast Features
 print("Calculate AutoArima features.")
-RollingForecatsInstance = RollingForecats$new(windows = c(252 * 2), workers = 8L,
+RollingForecatsInstance = RollingForecats$new(windows = c(252 * 2), workers = 6L,
                                               lag = lag_, at = at_,
                                               forecast_type = c("autoarima", "nnetar", "ets"),
                                               h = 22)
 RollingForecatsFeatures = RollingForecatsInstance$get_rolling_features(OhlcvInstance)
 
+# save
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingForecatsFeatures, paste0("D:/features/PEAD-RollingForecatsFeatures-", time_, ".csv"))
+
 # GAS
 print("Calculate GAS features.")
 RollingGasInit = RollingGas$new(windows = c(100, 252),
-                                workers = 8L,
+                                workers = 6L,
                                 at = at_,
                                 lag = lag_,
                                 gas_dist = "sstd",
@@ -386,28 +426,44 @@ RollingGasFeatures = RollingGasInit$get_rolling_features(OhlcvInstance)
 #                                                     Error in merge.data.table(x, y, by = c("symbol", "date"), all.x = TRUE, :
 #                                                                                 Elements listed in `by` must be valid column names in x and y
 
+# save
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingGasFeatures, paste0("D:/features/PEAD-RollingGasFeatures-", time_, ".csv"))
+
 # Gpd features
 print("Calculate Gpd features.")
-RollingGpdInit = RollingGpd$new(windows = c(22 * 3, 22 * 6), workers = 8L,
+RollingGpdInit = RollingGpd$new(windows = c(22 * 3, 22 * 6), workers = 6L,
                                 at = at_, lag = lag_,
                                 threshold = c(0.03, 0.05, 0.07))
 RollingGpdFeatures = RollingGpdInit$get_rolling_features(OhlcvInstance)
 
+# save
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingGpdFeatures, paste0("D:/features/PEAD-RollingGpdFeatures-", time_, ".csv"))
+
 # theft catch22 features
 print("Calculate Catch22 and feasts features.")
 RollingTheftInit = RollingTheft$new(windows = c(5, 22, 22 * 3, 22 * 12),
-                                    workers = 4L, at = at_, lag = lag_,
+                                    workers = 6L, at = at_, lag = lag_,
                                     features_set = c("catch22", "feasts"))
 RollingTheftCatch22Features = RollingTheftInit$get_rolling_features(OhlcvInstance)
 gc()
 
+# save
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingTheftCatch22Features, paste0("D:/features/PEAD-RollingTheftCatch22Features-", time_, ".csv"))
+
 # tsfeatures features
 print("Calculate tsfeatures features.")
 RollingTsfeaturesInit = RollingTsfeatures$new(windows = c(22 * 3, 22 * 6),
-                                              workers = 8L, at = at_,
+                                              workers = 6L, at = at_,
                                               lag = lag_, scale = TRUE)
 RollingTsfeaturesFeatures = RollingTsfeaturesInit$get_rolling_features(OhlcvInstance)
 gc()
+
+# save
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingTsfeaturesFeatures, paste0("D:/features/PEAD-RollingTsfeaturesFeatures-", time_, ".csv"))
 
 # theft tsfel features, Must be alone, because number of workers have to be 1L
 print("Calculate tsfel features.")
@@ -415,10 +471,9 @@ RollingTheftInit = RollingTheft$new(windows = c(22 * 3, 22 * 12), workers = 1L,
                                     at = at_, lag = lag_,  features_set = "TSFEL")
 RollingTheftTsfelFeatures = suppressMessages(RollingTheftInit$get_rolling_features(OhlcvInstance))
 
-# RollingTheftInit = RollingTheft$new(windows = c(22 * 3), workers = 1L,
-#                                     at = 1:70, lag = lag_,  features_set = "TSFEL")
-# test = Ohlcv$new(prices_dt[1:70, .(symbol, date, open, high, low, close, volume)], date_col = "date")
-# RollingTheftTsfelFeatures = suppressMessages(RollingTheftInit$get_rolling_features(test))
+# save
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingTheftTsfelFeatures, paste0("D:/features/PEAD-RollingTheftTsfelFeatures-", time_, ".csv"))
 
 # quarks
 RollingQuarksInit = RollingQuarks$new(windows = 22 * 6, workers = 6L, at = at_,
@@ -426,6 +481,10 @@ RollingQuarksInit = RollingQuarks$new(windows = 22 * 6, workers = 6L, at = at_,
                                       method = c("plain", "age"))
 RollingQuarksFeatures = RollingQuarksInit$get_rolling_features(OhlcvInstance)
 gc()
+
+# save
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingQuarksFeatures, paste0("D:/features/PEAD-RollingQuarksFeatures-", time_, ".csv"))
 
 # TVGARCH
 # SLOW !!!
@@ -446,49 +505,86 @@ RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6
 RollingWaveletArimaFeatures = RollingWaveletArimaInstance$get_rolling_features(OhlcvInstance)
 gc()
 
+# save
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingWaveletArimaFeatures, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
+
+# util function that returns most recently saved predictor object
+get_latest = function(predictors = "RollingExuberFeatures") {
+  f = file.info(list.files("D:/features", full.names = TRUE, pattern = predictors))
+  latest = tail(f[order(f$ctime), ], 1)
+  row.names(latest)
+}
+
+# import all saved predictors
+OhlcvFeaturesSetSample = fread(get_latest("OhlcvFeaturesSetSample"))
+RollingBidAskFeatures = fread(get_latest("RollingBidAskFeatures"))
+RollingBackCusumFeatures = fread(get_latest("RollingBackCusumFeatures"))
+RollingExuberFeatures = fread(get_latest("RollingExuberFeatures"))
+RollingForecatsFeatures = fread(get_latest("RollingForecatsFeatures"))
+RollingGpdFeatures = fread(get_latest("RollingGpdFeatures"))
+RollingTheftCatch22Features = fread(get_latest("RollingTheftCatch22Features"))
+RollingTheftTsfelFeatures = fread(get_latest("RollingTheftTsfelFeatures"))
+RollingTsfeaturesFeatures = fread(get_latest("RollingTsfeaturesFeatures"))
+# RollingQuarksFeatures = fread(get_latest("RollingQuarksFeatures"))
+RollingWaveletArimaFeatures = fread(get_latest("RollingWaveletArimaFeatures"))
+
 # merge all features test
-features_set <- Reduce(function(x, y) merge(x, y, by = c("symbol", "date"),
-                                            all.x = TRUE, all.y = FALSE),
-                       list(# OhlcvFeaturesSetSample,
-                            # RollingBidAskFeatures,
-                            # RollingBackCusumFeatures,
-                            # RollingExuberFeatures,
-                            # RollingForecatsFeatures,
-                            # RollingGasFeatures,
-                            # RollingGpdFeatures,
-                            RollingTheftCatch22Features,
-                            RollingTheftTsfelFeatures
-                            # RollingTsfeaturesFeatures,
-                            # RollingQuarksFeatures,
-                            # RollingTvgarchFeatures
-                            # RollingWaveletArimaFeatures
-                       ))
-features <- features_set[OhlcvFeaturesSetSample, on = c("symbol", "date"), roll = Inf]
+rolling_predictors <- Reduce(
+  function(x, y) merge( x, y, by = c("symbol", "date"), all.x = TRUE, all.y = FALSE),
+  list(
+    RollingBidAskFeatures,
+    RollingBackCusumFeatures,
+    RollingExuberFeatures,
+    RollingForecatsFeatures,
+    # RollingGasFeatures,
+    RollingGpdFeatures,
+    RollingTheftCatch22Features,
+    RollingTheftTsfelFeatures,
+    RollingTsfeaturesFeatures,
+    # RollingQuarksFeatures,
+    RollingWaveletArimaFeatures
+  )
+)
 
 # check
-head(OhlcvFeaturesSetSample[, 1:5])
-head(features_set[, 1:5])
-head(features[, 1:5])
+s = "AAPL"
+tail(events[symbol == s])
+tail(OhlcvFeaturesSetSample[symbol == s, 1:5])
+tail(rolling_predictors[symbol == s, 1:5])
 
-# save ohlcv features and merged features
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(features_set, paste0("D:/features-PEAD-", time_, ".csv"))
+### Importmant notes:
+# 1. OhlcvFeaturesSetSample has date columns one trading day after the event date.
+# 2. Rolling predictors have date column that is the same as event date
+# 3. So, we have to merge OhlcvFeaturesSetSample with roling from behind.
 
-# import features
-# list.files("D:/features")
-features_set <- fread("D:/features/features-PEAD-20230104090450.csv")
-features_gpd <- fread("D:/features-PEAD-GPD20230116090322.csv")
-features_set <- merge(features_set, features_gpd, by = c("symbol", "date"), all.x = TRUE, all.y = FALSE)
-# OhlcvFeaturesSetSample <- fread("D:/features/OhlcvFeatuesPEAD-20230104113949.csv")
-# features <- fread("D:/features/features-PEAD-20221216220140.csv")
+# merge
+rolling_predictors[, date_rolling := date]
+OhlcvFeaturesSetSample[, date_ohlcv := date]
+features <- rolling_predictors[OhlcvFeaturesSetSample, on = c("symbol", "date"), roll = Inf]
 
-# merge OHLCV and events
-features[, trading_date_after_event := date]
-features <- features[dataset, on = c("symbol", "date"), roll = -Inf]
-features[, .(symbol, date, trading_date_after_event)]
+# check for duplicates
+features[duplicated(features[, .(symbol, date)]), .(symbol, date)]
+features[duplicated(features[, .(symbol, date_ohlcv)]), .(symbol, date_ohlcv)]
+features[duplicated(features[, .(symbol, date_rolling)]), .(symbol, date_rolling)]
+features[duplicated(features[, .(symbol, date_rolling)]) | duplicated(features[, .(symbol, date_rolling)], fromLast = TRUE),
+         .(symbol, date, date_ohlcv, date_rolling)]
+features = features[!duplicated(features[, .(symbol, date_rolling)])]
 
-# remove missing values for trading_date_after_event
-features <- features[!is.na(trading_date_after_event)]
+# merge features and events
+any(duplicated(dataset[, .(symbol, date)]))
+any(duplicated(features[, .(symbol, date_rolling)]))
+features <- merge(features, dataset,
+                  by.x = c("symbol", "date_rolling"), by.y = c("symbol", "date"),
+                  all.x = TRUE, all.y = FALSE)
+# features <- features[dataset, on = c("symbol", "date"), roll = -Inf]
+features[, .(symbol, date, date_rolling, date_ohlcv)]
+features[duplicated(features[, .(symbol, date)]), .(symbol, date)]
+features[duplicated(features[, .(symbol, date_ohlcv)]), .(symbol, date_ohlcv)]
+features[duplicated(features[, .(symbol, date_rolling)]), .(symbol, date_rolling)]
+
+# remove missing ohlcv
+features <- features[!is.na(date_ohlcv)]
 
 # predictors from events data
 features[, `:=`(
@@ -506,16 +602,14 @@ data.table::setnames(fundamentals, "date", "fundamental_date")
 fundamentals <- unique(fundamentals, by = c("symbol", "acceptedDate"))
 
 # merge features and fundamental data
-features = fundamentals[features, on = c("symbol", "acceptedDate" = "date"), roll = Inf]
-features[, .(symbol, acceptedDate, acceptedDateTime)]
+features[, date_day_after_event := date_ohlcv]
+features = fundamentals[features, on = c("symbol", "acceptedDate" = "date_ohlcv"), roll = Inf]
+features[, .(symbol, acceptedDate, acceptedDateTime, date_day_after_event, date)]
 
 # remove unnecesary columns
-features[, `:=`(period.x = NULL, period.y = NULL, period = NULL, link = NULL,
-                finalLink = NULL, reportedCurrency = NULL)]
-features[symbol == "AAPL", .(symbol, fundamental_date, acceptedDate, acceptedDateFundamentals)]
-
-# change date name
-setnames(features, "acceptedDate", "date")
+features[, `:=`(period = NULL, link = NULL, finalLink = NULL, reportedCurrency = NULL)]
+features[symbol == "AAPL", .(symbol, fundamental_date, acceptedDate,
+                             acceptedDateFundamentals, date_day_after_event, date)]
 
 # convert char features to numeric features
 char_cols <- features[, colnames(.SD), .SDcols = is.character]
@@ -539,23 +633,29 @@ setnames(sentiments_dt, "date", "time_transcript")
 attr(sentiments_dt$time, "tz") <- "UTC"
 sentiments_dt[, date := as.Date(time)]
 sentiments_dt[, time := NULL]
+cols_sentiment = colnames(sentiments_dt)[grep("FLS", colnames(sentiments_dt))]
 
 # merge with features
-features <- sentiments_dt[features, on = c("symbol", "date"), roll = -Inf]
-features[, .(symbol, date, time_transcript, Not_FLS_positive)]
+features[, date_day_after_event_ := date_day_after_event]
+features <- sentiments_dt[features, on = c("symbol", "date" = "date_day_after_event_"), roll = Inf]
+features[, .(symbol, date, date_day_after_event, time_transcript, Not_FLS_positive)]
+features[1:50, .(symbol, date, date_day_after_event, time_transcript, Not_FLS_positive)]
 
 # remove observations where transcripts are more than 2 days away
-features <- features[date - as.Date(time_transcript) >= -1]
+features <- features[date - as.IDate(as.Date(time_transcript)) >= 3,
+                     (cols_sentiment) := NA]
+features[, ..cols_sentiment]
 
 # macro data
-features <- macro[features, on = "date", roll = Inf]
+features[, date_day_after_event_ := date_day_after_event]
+macro[, date_macro := date]
+features <- macro[features, on = c("date" = "date_day_after_event_"), roll = Inf]
+features[, .(symbol, date, date_day_after_event, date_macro, vix)]
 
-# add macro data to features
-macro_cols <- colnames(macro)[2:ncol(macro)]
-features[, (macro_cols) := lapply(.SD, nafill, type = "locf"), .SDcols = macro_cols]
-
-# checks
-any(duplicated(features[, .(symbol, date)]))
+# final checks for predictors
+any(duplicated(features[, .(symbol, date_day_after_event)]))
+features[duplicated(features[, .(symbol, date_day_after_event)]), .(symbol, date_day_after_event)]
+features[duplicated(features[, .(symbol, date)]), .(symbol, date)]
 
 
 
@@ -570,8 +670,11 @@ cols_remove <- c("trading_date_after_event", "time", "datetime_investingcom",
                  "fundamental_acceptedDate", "period", "right_time",
                  "updatedFromDate", "fiscalDateEnding", "time_investingcom",
                  "same_announce_time", "eps", "epsEstimated", "revenue", "revenueEstimated",
-                 "same_announce_time", "time_transcript", "i.time")
-cols_non_features <- c("symbol", "date", "time", "right_time",
+                 "same_announce_time", "time_transcript", "i.time",
+                 # remove dates we don't need
+                 setdiff(colnames(features)[grep("date", colnames(features), ignore.case = TRUE)], c("date", "date_rolling"))
+                 )
+cols_non_features <- c("symbol", "date", "date_rolling", "time", "right_time",
                        "ret_excess_stand_5", "ret_excess_stand_22", "ret_excess_stand_44", "ret_excess_stand_66",
                        colnames(features)[grep("aroundzero", colnames(features))],
                        colnames(features)[grep("extreme", colnames(features))],
@@ -585,6 +688,9 @@ tail(cols_features, 500)
 cols <- c(cols_non_features, cols_features)
 features <- features[, .SD, .SDcols = cols]
 
+# checks
+features[, .(symbol, date, date_rolling)]
+
 
 
 # CLEAN DATA --------------------------------------------------------------
@@ -592,22 +698,23 @@ features <- features[, .SD, .SDcols = cols]
 clf_data <- copy(features)
 chr_to_num_cols <- setdiff(colnames(clf_data[, .SD, .SDcols = is.character]), c("symbol", "time", "right_time"))
 clf_data <- clf_data[, (chr_to_num_cols) := lapply(.SD, as.numeric), .SDcols = chr_to_num_cols]
-int_to_num_cols <- colnames(clf_data[, .SD, .SDcols = is.integer])
-clf_data <- clf_data[, (int_to_num_cols) := lapply(.SD, as.numeric), .SDcols = int_to_num_cols]
+# int_to_num_cols <- colnames(clf_data[, .SD, .SDcols = is.integer])
+# clf_data <- clf_data[, (int_to_num_cols) := lapply(.SD, as.numeric), .SDcols = int_to_num_cols]
 log_to_num_cols <- colnames(clf_data[, .SD, .SDcols = is.logical])
 clf_data <- clf_data[, (log_to_num_cols) := lapply(.SD, as.numeric), .SDcols = log_to_num_cols]
 
 # remove duplicates
+any(duplicated(clf_data[, .(symbol, date)]))
 clf_data <- unique(clf_data, by = c("symbol", "date"))
 
 # remove columns with many NA
-keep_cols <- names(which(colMeans(!is.na(clf_data)) > 0.95))
+keep_cols <- names(which(colMeans(!is.na(clf_data)) > 0.5))
 print(paste0("Removing columns with many NA values: ", setdiff(colnames(clf_data), c(keep_cols, "right_time"))))
 clf_data <- clf_data[, .SD, .SDcols = keep_cols]
 
 # remove Inf and Nan values if they exists
 is.infinite.data.frame <- function(x) do.call(cbind, lapply(x, is.infinite))
-keep_cols <- names(which(colMeans(!is.infinite(as.data.frame(clf_data))) > 0.99))
+keep_cols <- names(which(colMeans(!is.infinite(as.data.frame(clf_data))) > 0.98))
 print(paste0("Removing columns with Inf values: ", setdiff(colnames(clf_data), keep_cols)))
 clf_data <- clf_data[, .SD, .SDcols = keep_cols]
 
@@ -617,462 +724,24 @@ clf_data <- clf_data[is.finite(rowSums(clf_data[, .SD, .SDcols = is.numeric], na
 n_1 <- nrow(clf_data)
 print(paste0("Removing ", n_0 - n_1, " rows because of Inf values"))
 
-# define feature columns
-feature_cols <- colnames(clf_data)[colnames(clf_data) %in% cols_features]
-
-# remove NA values
-n_0 <- nrow(clf_data)
-clf_data <- na.omit(clf_data, cols = feature_cols)
-n_1 <- nrow(clf_data)
-print(paste0("Removing ", n_0 - n_1, " rows because of NA values"))
-
-# remove constant columns
-# TODO: Move this to mlr3 pipeline !
-features_ <- clf_data[, ..feature_cols]
-remove_cols <- colnames(features_)[apply(features_, 2, var, na.rm=TRUE) == 0]
-print(paste0("Removing feature with 0 standard deviation: ", remove_cols))
-feature_cols <- setdiff(feature_cols, remove_cols)
-
 # save features
-fwrite(clf_data, "D:/features/pead-predictors.csv")
+time_ <- strftime(Sys.time(), "%Y%m%d%H%M%S")
+file_mame <- paste0("D:/features/pead-predictors-", time_, ".csv")
+fwrite(clf_data, file_mame)
 config <- tiledb_config()
 config["vfs.s3.aws_access_key_id"] <- Sys.getenv("AWS-ACCESS-KEY")
 config["vfs.s3.aws_secret_access_key"] <- Sys.getenv("AWS-SECRET-KEY")
 config["vfs.s3.region"] <- Sys.getenv("AWS-REGION")
 context_with_config <- tiledb_ctx(config)
+clf_data[, date := as.Date(date)]
+clf_data[, date_rolling := as.Date(date_rolling)]
+# doesn't work
 fromDataFrame(
   obj = clf_data,
-  uri = "s3://predictors-pead",
+  uri = "s3://predictors-pead-v2",
   col_index = c("symbol", "date"),
   sparse = TRUE,
   tile_domain=list(date=cbind(as.Date("1970-01-01"),
                               as.Date("2099-12-31"))),
   allows_dups = FALSE
 )
-
-
-
-# PREPROCESSING -----------------------------------------------------------
-# TODO: add all this mlr4 pipeline
-#  winsorization (remove outliers)
-clf_data[, q_ := data.table::quarter(as.Date(date, origin = as.Date("1970-01-01")))]
-clf_data[, (feature_cols) := lapply(.SD, Winsorize, probs = c(0.01, 0.99), na.rm = TRUE),
-         .SDcols = feature_cols,
-         by = q_]
-clf_data[, c("q_")  := NULL]
-
-# remove constant columns
-# TODO: Move this to mlr3 pipeline !
-features_ <- clf_data[, ..feature_cols]
-remove_cols <- colnames(features_)[apply(features_, 2, var, na.rm=TRUE) == 0]
-print(paste0("Removing feature with 0 standard deviation: ", remove_cols))
-feature_cols <- setdiff(feature_cols, remove_cols)
-
-# remove highly correlated features
-# TODO move this to mlr3 pipe7line !
-features_ <- clf_data[, ..feature_cols]
-cor_matrix <- cor(features_)
-cor_matrix_rm <- cor_matrix                  # Modify correlation matrix
-cor_matrix_rm[upper.tri(cor_matrix_rm)] <- 0
-diag(cor_matrix_rm) <- 0
-remove_cols <- colnames(features_)[apply(cor_matrix_rm, 2, function(x) any(x > 0.99))]
-print(paste0("Removing highly correlated featue (> 0.99): ", remove_cols))
-feature_cols <- setdiff(feature_cols, remove_cols)
-
-# remove missing values
-n_0 <- nrow(clf_data)
-clf_data <- na.omit(clf_data)
-n_1 <- nrow(clf_data)
-print(paste0("Removing ", n_0 - n_1, " rows because of NA values"))
-
-# uniformisation of features
-clf_data[, q_ := data.table::quarter(as.Date(date, origin = as.Date("1970-01-01")))]
-clf_data[, (feature_cols) := lapply(.SD, function(x) ecdf(x)(x)),
-         .SDcols = feature_cols,
-         by = q_]
-clf_data[, c("q_")  := NULL]
-skimr::skim(clf_data$TSFEL_0_Absolute_energy_264)
-skimr::skim(clf_data$autoarima_sd_504_Hi80)
-skimr::skim(clf_data$eps_diff)
-skimr::skim(clf_data$revenueGrowth)
-
-
-
-# FEATURE SLECTION --------------------------------------------------------
-# choose label
-print(paste0("Choose among this features: ",
-             colnames(clf_data)[grep("^ret_excess_stand", colnames(clf_data))]))
-LABEL = "ret_excess_stand_22"
-
-# TODO Move this to mlr3 pipeline!
-# define feature matrix
-cols_keep <- c(feature_cols, LABEL)
-X <- clf_data[, ..cols_keep]
-
-# winsorize LABEL
-X[, (LABEL) := Winsorize(get(LABEL), probs = c(0.01, 0.99), na.rm = TRUE)]
-skimr::skim(X[, get(LABEL)])
-label_index <- which(colnames(X) == LABEL)
-
-# gausscov requre matrix
-X <- as.matrix(X)
-y <- X[, label_index]
-X <- X[, -label_index]
-
-# data(abcq)
-# dim(abcq)
-# abcql<-flag(abcq,240,4,16)
-# a <- f1st(abcql[[1]],abcql[[2]])
-
-# f1st
-############## ADD 1 !!!!!!!!!???????? ############
-f1st_fi_ <- f1st(y, X, kmn = 10)
-predictors_f1st <- colnames(X)[f1st_fi_[[1]][, 1]]
-
-# f3st_1
-f3st_1_ <- f3st(y, X, kmn = 10, m = 1)
-predictors_f3st_1 <- unique(as.integer(f3st_1_[[1]][1, ]))[-1]
-predictors_f3st_1 <- predictors_f3st_1[predictors_f3st_1 != 0]
-predictors_f3st_1 <- colnames(X)[predictors_f3st_1]
-
-# f3st_1 m=2
-f3st_2_ <- f3st(X[, ncol(X)], X[, -ncol(X)], kmn = 20, m = 2)
-cov_index_f3st_2 <- unique(as.integer(f3st_2_[[1]][1, ]))[-1]
-cov_index_f3st_2 <- cov_index_f3st_2[cov_index_f3st_2 != 0]
-cov_index_f3st_2 <- colnames(X[, -ncol(X)])[cov_index_f3st_2]
-
-# # f3st_1 m=3
-# f3st_3_ <- f3st(X[, ncol(X)], X[, -ncol(X)], kmn = 20, m = 3)
-# cov_index_f3st_3_ <- unique(as.integer(f3st_3_[[1]][1, ]))[-1]
-# cov_index_f3st_3 <- cov_index_f3st_3[cov_index_f3st_3 != 0]
-# cov_index_f3st_3 <- colnames(X[, -ncol(X)])[cov_index_f3st_3]
-
-# save important vars
-ivars <- list(
-  predictors_f1st = predictors_f1st,
-  predictors_f3st_1 = predictors_f3st_1
-  # f3st_2_ = f3st_2_
-)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-saveRDS(ivars, paste0("D:/mlfin/mlr3_models/PEAD-ivars-", time_, ".rds"))
-
-# import important vars
-# file.info(list.files("D:/mlfin/mlr3_models", full.names = TRUE, pattern = "PEAD"))
-# ivars <- readRDS("D:/mlfin/mlr3_models/PEAD-ivars-20221219093210.rds")
-# f1st_fi_ <- colnames(X[, -ncol(X)])[ivars$f1st_fi_[[1]][, 1]]
-# cov_index_f3st_1 <- unique(as.integer(ivars$f3st_1_[[1]][1, ]))[-1]
-# cov_index_f3st_1 <- cov_index_f3st_1[cov_index_f3st_1 != 0]
-# cov_index_f3st_1 <- colnames(X[, -ncol(X)])[cov_index_f3st_1]
-# cov_index_f3st_2 <- unique(as.integer(ivars$f3st_2_[[1]][1, ]))[-1]
-# cov_index_f3st_2 <- cov_index_f3st_2[cov_index_f3st_2 != 0]
-# cov_index_f3st_2 <- colnames(X[, -ncol(X)])[cov_index_f3st_2]
-
-# interesection of all important vars
-most_important_vars <- intersect(predictors_f1st, predictors_f3st_1)
-important_vars <- unique(c(predictors_f1st, predictors_f3st_1))
-
-
-
-# DEFINE TASKS ------------------------------------------------------------
-# select only labels and features
-labels <- colnames(clf_data)[grep(LABEL, colnames(clf_data))]
-X_mlr3 <- clf_data[, .SD, .SDcols = c("symbol", "date", feature_cols, labels)]
-
-# add groupid
-X_mlr3[, monthid := paste0(data.table::year(as.Date(date, origin = "1970-01-01")),
-                           data.table::month(as.Date(date, origin = "1970-01-01")))]
-setorder(X_mlr3, date)
-
-# task with aroundzero bins
-task_aroundzero <- as_task_classif(X_mlr3[, .SD, .SDcols = !c("symbol","date", labels[!grepl("aroundzero", labels)])],
-                                   id = "aroundzero",
-                                   target = labels[grep("aroundzero", labels)])
-
-# task with aroundzero bins
-task_decile <- as_task_classif(X_mlr3[, .SD, .SDcols = !c("symbol","date", labels[!grepl("decile", labels)])],
-                               id = "decile",
-                               target = labels[grep("decile", labels)])
-
-# bin simple
-task_simple <- as_task_classif(X_mlr3[, .SD, .SDcols = !c("symbol","date", labels[!grepl("simple", labels)])],
-                               id = "simple",
-                               target = labels[grep("simple", labels)])
-
-# task for regression
-task_reg <- as_task_regr(X_mlr3[, .SD, .SDcols = !c("symbol","date", labels[!grepl("^ret_excess_stand", labels)])],
-                         id = "reg", target = labels[grep("^ret_excess_stand", labels)])
-
-# task with extreme bins
-label_ <- labels[grep("extreme", labels)]
-X_mlr3_ <- X_mlr3[get(label_) %in% c(-1, 1) & !is.na(get(label_))]
-X_mlr3_[, (label_) := droplevels(X_mlr3_[, get(label_)])]
-task_extreme <- as_task_classif(X_mlr3_[, .SD, .SDcols = !c("symbol","date", labels[!grepl("extreme", labels)])],
-                                id = "extreme",
-                                target = labels[grep("extreme", labels)],
-                                positive = "1")
-
-# create custom cv and validation set
-create_validation_set <- function(task) {
-  # add group role
-  task_ <- task$clone()
-  task_$set_col_roles("monthid", "group")
-  groups = task_$groups
-
-  # add validation set
-  val_ind <- min(which(groups$group == "202111")):nrow(groups)
-  task$set_row_roles(rows = val_ind, role = "holdout")
-}
-create_validation_set(task_aroundzero)
-create_validation_set(task_decile)
-create_validation_set(task_simple)
-create_validation_set(task_reg)
-
-#  Instantiate Resampling
-custom = rsmp("custom")
-task_ <- task_aroundzero$clone()
-task_$set_col_roles("monthid", "group")
-groups = task_$groups
-rm(task_)
-groups_v <- groups[, unique(group)]
-train_length <- 24
-test_length <- 1
-train_groups <- lapply(0:(length(groups_v)-(train_length+1)), function(x) x + (1:train_length))
-test_groups <- lapply(train_groups, function(x) tail(x, 1) + test_length)
-train_sets <- lapply(train_groups, function(x) groups[group %in% groups_v[x], row_id])
-test_sets <- lapply(test_groups, function(x) groups[group %in% groups_v[x], row_id])
-custom$instantiate(task_aroundzero, train_sets, test_sets)
-# custom$train_set(1)
-# custom$test_set(1)
-
-
-
-# FEATURE SELECTION (TEST) ------------------------------------------------
-# select features
-test_ <- na.omit(unique(c(predictors_f3st_1)))
-# task_extreme$select(test_)
-task_aroundzero$select(test_)
-task_simple$select(test_)
-task_decile$select(test_)
-task_reg$select(test_)
-
-# rpart tree classificatoin function
-tree_visualization <- function(task_, maxdepth = 4, cp = 0.002) {
-  learner = lrn("classif.rpart", maxdepth = maxdepth,
-                predict_type = "prob", cp = cp)
-  learner$train(task_)
-  predictins = learner$predict(task_)
-  print(predictins$score(c(msr("classif.acc"), msr("classif.recall"), msr("classif.precision"), msr("classif.fbeta"))))
-  print(learner$importance())
-  rpart_model <- learner$model
-  rpart.plot(rpart_model)
-}
-tree_visualization(task_simple$clone(), cp = 0.001)
-tree_visualization(task_simple$clone(), cp = 0.0001)
-tree_visualization(task_simple$clone(), cp = 0.00001)
-
-# rpart tree regression
-learner = lrn("regr.rpart", maxdepth = 4, cp = 0.01)
-task_ <- task_reg$clone()
-learner$train(task_reg)
-predictins = learner$predict(task_reg)
-predictins$score(msr("regr.mae"))
-learner$importance()
-rpart_model <- learner$model
-rpart.plot(rpart_model)
-
-
-
-# CLASSIFICATION AUTOML ---------------------------------------------------
-# learners
-learners_l = list(
-  ranger = lrn("classif.ranger", predict_type = "prob", id = "ranger"),
-  # log_reg = lrn("classif.log_reg", predict_type = "prob", id = "log_reg"),
-  # kknn = lrn("classif.kknn", predict_type = "prob", id = "kknn"),
-  # cv_glmnet = lrn("classif.cv_glmnet", predict_type = "prob", id = "cv_glmnet"),
-  xgboost = lrn("classif.xgboost", predict_type = "prob", id = "xgboost")
-)
-# create graph from list of learners
-choices = c("ranger", "xgboost")
-learners = po("branch", choices, id = "branch_learners") %>>%
-  gunion(learners_l) %>>%
-  po("unbranch", choices, id = "unbranch_learners")
-
-# create complete grapg
-graph = po("removeconstants", ratio = 0.01) %>>%
-  # modelmatrix
-  po("branch", options = c("nop_filter", "modelmatrix"), id = "interaction_branch") %>>%
-  gunion(list(po("nop", id = "nop_filter"), po("modelmatrix", formula = ~ . ^ 2))) %>>%
-  po("unbranch", id = "interaction_unbranch") %>>%
-  po("removeconstants", id = "removeconstants_2", ratio = 0.01) %>>%
-  # scaling
-  po("branch", options = c("nop_prep", "yeojohnson", "pca", "ica"), id = "prep_branch") %>>%
-  gunion(list(po("nop", id = "nop_prep"), po("yeojohnson"), po("pca", scale. = TRUE), po("ica"))) %>>%
-  po("unbranch", id = "prep_unbranch") %>>%
-  learners%>>%
-  po("classifavg", innum = length(learners_l))
-plot(graph)
-graph_learner = as_learner(graph)
-as.data.table(graph_learner$param_set)[1:70, .(id, class, lower, upper)]
-search_space = ps(
-  # preprocesing
-  interaction_branch.selection = p_fct(levels = c("nop_filter", "modelmatrix")),
-  prep_branch.selection = p_fct(levels = c("nop_prep", "yeojohnson", "pca", "ica")),
-  pca.rank. = p_int(2, 6, depends = prep_branch.selection == "pca"),
-  ica.n.comp = p_int(2, 6, depends = prep_branch.selection == "ica"),
-  yeojohnson.standardize = p_lgl(depends = prep_branch.selection == "yeojohnson"),
-  # models
-  ranger.ranger.mtry.ratio = p_dbl(0.2, 1),
-  ranger.ranger.max.depth = p_int(2, 4),
-  # kknn.kknn.k = p_int(5, 20),
-  xgboost.xgboost.nrounds = p_int(100, 5000),
-  xgboost.xgboost.eta = p_dbl(1e-4, 1),
-  xgboost.xgboost.max_depth = p_int(1, 8),
-  xgboost.xgboost.colsample_bytree = p_dbl(0.1, 1),
-  xgboost.xgboost.colsample_bylevel = p_dbl(0.1, 1),
-  xgboost.xgboost.lambda = p_dbl(0.1, 1),
-  xgboost.xgboost.gamma = p_dbl(1e-4, 1000),
-  xgboost.xgboost.alpha = p_dbl(1e-4, 1000),
-  xgboost.xgboost.subsample = p_dbl(0.1, 1)
-)
-# plan("multisession", workers = 4L)
-
-rr = resample(task_aroundzero, graph_learner, custom, store_models = TRUE)
-rr$aggregate(msr("classif.acc"))
-rr$warnings
-rr$resampling
-rr$prediction()
-
-# holdout prediction
-rr$
-
-rr_decile = resample(task_decile, graph_learner, custom, store_models = TRUE)
-
-
-at_classif = auto_tuner(
-  method = "random_search",
-  learner = graph_learner,
-  resampling = custom,
-  measure = msr("classif.acc"),
-  search_space = search_space
-  # term_evals = 10
-)
-at_classif
-# at_classif$train(task_aroundzero)
-
-# inspect results
-at_classif$tuning_result
-at_classif$learner
-archive <- as.data.table(at_classif$archive)
-length(at_classif$state)
-ggplot(archive[, mean(classif.fbeta), by = "ranger.ranger.max.depth"], aes(x = ranger.ranger.max.depth, y = V1)) + geom_line()
-ggplot(archive[, mean(classif.fbeta), by = "prep_branch.selection"], aes(x = prep_branch.selection, y = V1)) + geom_bar(stat = "identity")
-ggplot(archive[, mean(classif.fbeta), by = "interaction_branch.selection"], aes(x = interaction_branch.selection, y = V1)) + geom_bar(stat = "identity")
-preds = at_classif$predict(task_extreme)
-preds$confusion
-preds$score(list(msr("classif.acc")))
-preds$score(list(msr("classif.fbeta"), msr("classif.acc")))
-
-# holdout extreme
-preds_holdout <- at_classif$predict(task_extreme_holdout)
-preds_holdout$confusion
-autoplot(preds_holdout, type = "roc")
-preds_holdout$score(msrs(c("classif.acc")))
-preds_holdout$score(msrs(c("classif.acc", "classif.recall", "classif.precision", "classif.fbeta")))
-prediciotns_extreme_holdout <- as.data.table(preds_holdout)
-prediciotns_extreme_holdout <- prediciotns_extreme_holdout[`prob.1` > 0.6]
-nrow(prediciotns_extreme_holdout)
-mlr3measures::acc(prediciotns_extreme_holdout$truth,
-                  prediciotns_extreme_holdout$response)
-prediciotns_extreme_holdout[, truth := as.factor(ifelse(truth == 0, 1, -1))]
-prediciotns_extreme_holdout$truth <- droplevels(prediciotns_extreme_holdout$truth)
-prediciotns_extreme_holdout$response <- droplevels(prediciotns_extreme_holdout$response)
-# levels(prediciotns_extreme_holdout$response) <- c("-1", "1")
-# mlr3measures::acc(prediciotns_extreme_holdout$truth,
-#                   prediciotns_extreme_holdout$response)
-
-# try extreme on bin simple
-X_model_sim <- copy(X_holdout)
-levels(X_model_sim$bin_simple_ret_excess_stand_5) <- c("-1", "1")
-X_model_sim <- X_model_sim[, .SD, .SDcols = !c("symbol","date", labels[!grepl("simple", labels)])]
-setnames(X_model_sim, "bin_simple_ret_excess_stand_5", "bin_extreme_ret_excess_stand_5")
-X_model_sim$bin_extreme_ret_excess_stand_5
-# summary(X_model_sim$eps_diff)
-# X_model_sim <- X_model_sim[eps_diff > .1 | eps_diff < -.1] # sample here !
-# dim(X_model_sim)
-task_simple_on_extreme <- as_task_classif(na.omit(X_model_sim), id = "simple_on_extreme",
-                                          target = labels[grep("extreme", labels)])
-task_simple_on_extreme$select(test_)
-preds_holdout <- at_classif$predict(task_simple_on_extreme)
-as.data.table(task_simple_on_extreme)
-preds_holdout$confusion
-autoplot(preds_holdout, type = "roc")
-preds_holdout$score(msrs(c("classif.acc", "classif.recall", "classif.precision", "classif.fbeta")))
-prediciotns_extreme_holdout <- as.data.table(preds_holdout)
-prediciotns_extreme_holdout <- prediciotns_extreme_holdout[prob.1 > 0.55]
-nrow(prediciotns_extreme_holdout)
-mlr3measures::acc(prediciotns_extreme_holdout$truth, prediciotns_extreme_holdout$response)
-
-
-task_simple_extreme_holdout
-
-# which variable correlate with extreme?
-cols_ <- c(colnames(X_model)[3:which(colnames(X_model) == "DCOILWTICO_ret_week")], "ret_excess_stand_5")
-test_ <- X_model[, ..cols_]
-dim(test_)
-test_[, 700:703]
-test_[, 1:3]
-# test_[, bin_extreme_ret_excess_stand_5 := as.integer(as.character(bin_extreme_ret_excess_stand_5))]
-# test_ <- test_[!is.na(bin_extreme_ret_excess_stand_5)]
-corr_bin <- cor(test_[, 1:702], test_$ret_excess_stand_5)
-class(corr_bin)
-head(corr_bin)
-head(corr_bin[order(corr_bin[, 1], decreasing = TRUE), , drop = FALSE])
-
-# predictions for qc
-cols_qc <- c("symbol", "date")
-predictoins_qc <- cbind(X_holdout[, ..cols_qc], as.data.table(preds_holdout))
-predictoins_qc[, grep("row_ids|truth", colnames(predictoins_qc)) := NULL]
-predictoins_qc <- unique(predictoins_qc)
-setorder(predictoins_qc, "date")
-
-# save to dropbox for live trading (create table for backtest)
-cols <- c("date", "symbol", colnames(predictoins_qc)[4:ncol(predictoins_qc)])
-pead_qc <- predictoins_qc[, ..cols]
-pead_qc[, date := as.character(date)]
-print(unique(pead_qc$symbol))
-pead_qc <- pead_qc[, .(symbol = paste0(unlist(symbol), collapse = ", "),
-                       prob1 = paste0(unlist(prob.1), collapse = ",")), by = date]
-bl_endp_key <- storage_endpoint(Sys.getenv("BLOB-ENDPOINT"), key=Sys.getenv("BLOB-KEY"))
-cont <- storage_container(bl_endp_key, "qc-backtest")
-storage_write_csv2(pead_qc, cont, file = "hft.csv", col_names = FALSE)
-
-
-
-# TRAIN FINAL MODEL -------------------------------------------------------
-# train final model
-hft_mlr3_model <- at_classif$learner$train(task_extreme)
-
-# holdout extreme
-preds_holdout <- hft_mlr3_model$predict(task_aroundzero_holdout)
-preds_holdout$confusion
-autoplot(preds_holdout, type = "roc")
-preds_holdout$score(msrs(c("classif.acc", "classif.recall", "classif.precision", "classif.fbeta")))
-prediciotns_extreme_holdout <- as.data.table(preds_holdout)
-prediciotns_extreme_holdout <- prediciotns_extreme_holdout[`prob.1` > 0.60]
-nrow(prediciotns_extreme_holdout)
-mlr3measures::acc(prediciotns_extreme_holdout$truth,
-                  prediciotns_extreme_holdout$response)
-mlr3measures::acc(prediciotns_extreme_holdout$truth,
-                  prediciotns_extreme_holdout$response)
-
-
-# time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-# saveRDS(hft_mlr3_model,
-#         paste0("D:/mlfin/mlr3_models/hft_mlr3_model-", time_, ".rds"))
-# hft_mlr3_model
-#
-#
-# hftmlr_model = readRDS(file = "D:/mlfin/mlr3_models/hft_mlr3_model-20220830164033.rds")
-# saveRDS(hftmlr_model,
-#         paste0("D:/mlfin/mlr3_models/hftmlr_model.rds"))
-

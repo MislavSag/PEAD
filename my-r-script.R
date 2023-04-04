@@ -86,19 +86,19 @@ task_ret_month <- as_task_regr(DT[, ..cols_],
                                id = "task_ret_month",
                                target = target_)
 
-# task with future 2 months returns as target
-target_ = colnames(DT)[grep("^ret_excess_stand_44", colnames(DT))]
-cols_ = c(target_, "monthid", cols_features)
-task_ret_month2 <- as_task_regr(DT[, ..cols_],
-                                id = "task_ret_month2",
-                                target = target_)
-
-# task with future 2 months returns as target
-target_ = colnames(DT)[grep("^ret_excess_stand_66", colnames(DT))]
-cols_ = c(target_, "monthid", cols_features)
-task_ret_quarter <- as_task_regr(DT[, ..cols_],
-                                 id = "task_ret_quarter",
-                                 target = target_)
+# # task with future 2 months returns as target
+# target_ = colnames(DT)[grep("^ret_excess_stand_44", colnames(DT))]
+# cols_ = c(target_, "monthid", cols_features)
+# task_ret_month2 <- as_task_regr(DT[, ..cols_],
+#                                 id = "task_ret_month2",
+#                                 target = target_)
+#
+# # task with future 2 months returns as target
+# target_ = colnames(DT)[grep("^ret_excess_stand_66", colnames(DT))]
+# cols_ = c(target_, "monthid", cols_features)
+# task_ret_quarter <- as_task_regr(DT[, ..cols_],
+#                                  id = "task_ret_quarter",
+#                                  target = target_)
 
 
 # create group and holdout set
@@ -654,7 +654,7 @@ design
 print("Nested banchmark")
 # nested for loop
 # future::plan("multisession", workers = 4L)
-for (i in 26:tail(customi$iters, 1)) { # seq_len(customi$iters)
+for (i in 28:tail(customi$iters, 1)) { # seq_len(customi$iters)
 
   # debug
   # i = 1

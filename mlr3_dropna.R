@@ -21,8 +21,9 @@ PipeOpDropNA = R6::R6Class(
     },
 
     .predict_task = function(task) {
-      # nothing to be done
-      task
+      featuredata = task$data(cols = task$feature_names)
+      exclude = apply(is.na(featuredata), 1, any)
+      task$filter(task$row_ids[!exclude])
     }
   )
 )
