@@ -250,6 +250,7 @@ source("mlr3_dropna.R")
 source("mlr3_dropnacol.R")
 source("mlr3_filter_drop_corr.R")
 source("mlr3_winsorizationsimple.R")
+source("PipeOpPCAExplained.R")
 source("Linex.R")
 
 # add my pipes to mlr dictionary
@@ -259,6 +260,7 @@ mlr_pipeops$add("winsorizesimple", PipeOpWinsorizeSimple)
 mlr_pipeops$add("dropna", PipeOpDropNA)
 mlr_pipeops$add("dropnacol", PipeOpDropNACol)
 mlr_pipeops$add("dropcorr", PipeOpDropCorr)
+mlr_pipeops$add("pca_explained", PipeOpPCAExplained)
 mlr_filters$add("gausscov_f1st", FilterGausscovF1st)
 mlr_measures$add("linex", Linex)
 
@@ -266,88 +268,22 @@ mlr_measures$add("linex", Linex)
 
 # GRAPH -------------------------------------------------------------------
 # xgboost hyperband
-learner = lrn("regr.xgboost",
-              nrounds           = to_tune(p_int(27, 243, tags = "budget")),
-              eta               = to_tune(1e-4, 1, logscale = TRUE),
-              max_depth         = to_tune(1, 20),
-              colsample_bytree  = to_tune(1e-1, 1),
-              colsample_bylevel = to_tune(1e-1, 1),
-              lambda            = to_tune(1e-3, 1e3, logscale = TRUE),
-              alpha             = to_tune(1e-3, 1e3, logscale = TRUE),
-              subsample         = to_tune(1e-1, 1)
+learners_l = list(
+  ranger = lrn("regr.ranger", id = "ranger"),
+  # lm = lrn("regr.lm", id = "lm"), # removed because of error: Error: protect(): protection stack overflow This happened PipeOp lm.lm's $train()
+  kknn = lrn("regr.kknn", id = "kknn"),
+  xgboost = lrn("regr.xgboost", id = "xgboost")
 )
-at_xgb = auto_tuner(
-  tuner = tnr("hyperband", eta = 5),
-  learner = learner,
-  resampling = rsmp("holdout", ratio = 0.9),
-  terminator = trm("none"),
-  store_models = TRUE
-)
-
-# ranger hyperband
-learner = lrn(
-  "regr.ranger",
-  mtry.ratio      = to_tune(0, 1),
-  max.depth       = to_tune(p_int(1, 10)),
-  sample.fraction = to_tune(1e-1, 1),
-  num.trees       = to_tune(p_int(1, 2000, tags = "budget")),
-  splitrule       = to_tune(levels = c("variance", "extratrees"))
-)
-at_rf = auto_tuner(
-  tuner = tnr("hyperband", eta = 5),
-  learner = learner,
-  resampling = rsmp("holdout", ratio = 0.9),
-  terminator = trm("none"),
-  store_models = TRUE
-)
-
-# kkn hyperband
-learner = lrn(
-  "regr.kknn",
-  k        = to_tune(p_int(1, 100, logscale = TRUE, tags = "budget")),
-  distance = to_tune(1, 5),
-  kernel   = to_tune(c("rectangular", "optimal", "epanechnikov", "biweight", "triweight", "cos",  "inv",  "gaussian", "rank"))
-
-)
-at_kknn = auto_tuner(
-  tuner = tnr("hyperband", eta = 5),
-  learner = learner,
-  resampling = rsmp("holdout", ratio = 0.9),
-  terminator = trm("none"),
-  store_models = TRUE
-)
-
-################ OLD WAY #################
-# learners_l = list(
-#   ranger = lrn("regr.ranger", id = "ranger"),
-#   lm = lrn("regr.lm", id = "lm"),
-#   kknn = lrn("regr.kknn", id = "kknn"),
-#   # cv_glmnet = lrn("classif.cv_glmnet", predict_type = "prob", id = "cv_glmnet"),
-#   xgboost = lrn("regr.xgboost", id = "xgboost")
-# )
-################ OLD WAY #################
 
 # create graph from list of learners
-choices = c("rf", "xgb", "kknn", "nnet", "lm", "earth")
-learners = po("branch", choices, id = "branch_learners") %>>%
-  # gunion(list(at_rf, at_xgb, at_kknn)) %>>%
-  gunion(list(
-    ranger = lrn("regr.ranger", id = "ranger"),
-    xgboost = lrn("regr.xgboost", id = "xgboost"),
-    kknn = lrn("regr.kknn", id = "kknn"),
-    # cv_glmnet = lrn("regr.cv_glmnet", id = "cv_glmnet"),
-    nnet = lrn("regr.nnet", id = "nnet", MaxNWts = 5000),
-    # km = lrn("regr.km", id = "km"),
-    lm = lrn("regr.lm", id = "lm"),
-    # extralearners
-    # bart = lrn("regr.bart", id = "bart"),
-    earth = lrn("regr.earth", id = "earth")
-    # lightgbm = lrn("regr.lightgbm", id = "lightgbm")
-  )) %>>%
-  po("unbranch", choices, id = "unbranch_learners")
+choices = c("ranger", "kknn", "xgboost")
+learners = gunion(learners_l) %>>%
+  po("regravg", innum = length(learners_l))
 
 # create graph
-graph = po("dropnacol", id = "dropnacol", cutoff = 0.05) %>>%
+graph =
+  po("subsample") %>>%
+  po("dropnacol", id = "dropnacol", cutoff = 0.05) %>>%
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
   po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
@@ -356,9 +292,10 @@ graph = po("dropnacol", id = "dropnacol", cutoff = 0.05) %>>%
   po("uniformization") %>>%
   po("dropna", id = "dropna_v2") %>>%
   # dim reduction
-  po("branch", options = c("pca", "gausscov"), id = "prep_branch") %>>%
-  gunion(list(po("pca"), po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0))) %>>%
-  po("unbranch", id = "prep_unbranch") %>>%
+  po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0) %>>%
+  # po("branch", options = c("pca", "gausscov"), id = "prep_branch") %>>%
+  # gunion(list(po("pca"), po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0))) %>>%
+  # po("unbranch", id = "prep_unbranch") %>>%
   # modelmatrix
   po("branch", options = c("nop_filter", "modelmatrix"), id = "interaction_branch") %>>%
   gunion(list(po("nop", id = "nop_filter"), po("modelmatrix", formula = ~ . ^ 2))) %>>%
@@ -373,6 +310,8 @@ graph_learner = as_learner(graph)
 as.data.table(graph_learner$param_set)[1:100, .(id, class, lower, upper)]
 as.data.table(graph_learner$param_set)[grep("drop", id), .(id, class, lower, upper)]
 search_space = ps(
+  # subsample for hyperband
+  subsample.frac = p_dbl(0.2, 1, tags = "budget"),
   # preprocessing
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
@@ -387,36 +326,32 @@ search_space = ps(
   winsorizesimple.probs_high = p_fct(levels = c(0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimple.probs_low = p_fct(levels = c(0.01, 0.02, 0.03, 0.1, 0.2)),
   # dim reduction
-  prep_branch.selection = p_fct(levels = c("pca", "gausscov")),
-  pca.rank. = p_fct(
-    levels = c("5", "50", "100", "200", "400"),
-    trafo = function(x, param_set) {
-      switch(x,
-             "5" = 5,
-             "50" = 50,
-             "100" = 100,
-             "200" = 200,
-             "400" = 400)
-    }
-  ),
-  # pca.rank. = p_int(2, 1000, depends = prep_branch.selection == "pca"),
-  # kernelpca.features = p_int(2, 1000, depends = prep_branch.selection == "kernelpca"),
+  # prep_branch.selection = p_fct(levels = c("pca", "gausscov")),
+  # pca_explained.var. = p_fct(
+  #   levels = c("0.99", "0.95", "0.90"),
+  #   trafo = function(x, param_set) {
+  #     switch(x,
+  #            "0.90" = 0.90,
+  #            "0.95" = 0.95,
+  #            "0.99" = 0.99)
+  #   },
+  #   depends = prep_branch.selection == "pca"
+  # ),
+  # pca.rank. = p_fct(
+  #   levels = c("4", "16", "32", "64", "128", "256", "512"),
+  #   trafo = function(x, param_set) {
+  #     switch(x,
+  #            "4" = 4,
+  #            "16" = 16,
+  #            "32" = 32,
+  #            "64" = 64,
+  #            "128" = 128,
+  #            "256" = 256)
+  #   },
+    # depends = prep_branch.selection == "pca"
+  # ),
   # interaction terms
-  interaction_branch.selection = p_fct(levels = c("nop_filter", "modelmatrix"),
-                                       depends = prep_branch.selection == "gausscov"),
-  # ml models
-  branch_learners.selection = p_fct(levels = choices)
-  # extra transformations
-  # .extra_trafo = function(x, param_set) {
-  #   x$winsorizesimple.probs_high = switch(
-  #     x$winsorizesimple.probs_high,
-  #     "0.99" = 0.99,
-  #     "0.98" = 0.98,
-  #     "0.97" = 0.97
-  #   )
-  #   x$winsorizesimple.probs_low = 1 - as.numeric(x$winsorizesimple.probs_high)
-  #   x
-  # }
+  interaction_branch.selection = p_fct(levels = c("nop_filter", "modelmatrix"))
 )
 
 # inspect search space
@@ -446,8 +381,8 @@ design
 
 # NESTED CV BENCHMARK -----------------------------------------------------
 # nested for loop
-future::plan("multisession", workers = 2L)
-for (i in 5:custom_inner$iters) {
+# future::plan("multisession", workers = 4L)
+for (i in 16:custom_inner$iters) {
 
   # debug
   # i = 1
@@ -460,13 +395,21 @@ for (i in 5:custom_inner$iters) {
                       list(custom_inner$test_set(i)))
 
   # auto tuner
+  # at = auto_tuner(
+  #   tuner = tnr("mbo"), # tnr("random_search", batch_size = 3),
+  #   learner = graph_learner,
+  #   resampling = custom_,
+  #   measure = msr("linex"),
+  #   search_space = search_space,
+  #   term_evals = 5
+  # )
   at = auto_tuner(
-    tuner = tnr("mbo"), # tnr("random_search", batch_size = 3),
+    tuner = tnr("hyperband", eta = 5),
     learner = graph_learner,
     resampling = custom_,
     measure = msr("linex"),
     search_space = search_space,
-    term_evals = 5
+    terminator = trm("none")
   )
 
   # outer resampling
@@ -486,78 +429,3 @@ for (i in 5:custom_inner$iters) {
   saveRDS(bmr, file.path(mlr3_save_path, paste0(i, "-", time_, ".rds")))
 }
 
-# inspect single benchmark
-bmr_ = readRDS("D:/mlfin/cvresults-pead/1-20230306111336.rds")
-bmr_$aggregate(msrs(c("regr.mse", "linex", "regr.mae")))
-predicitons = as.data.table(as.data.table(bmr_)[, "prediction"][1][[1]][[1]])
-predicitons[, `:=`(
-  truth_sign = as.factor(sign(truth)),
-  response_sign = as.factor(sign(response))
-)]
-mlr3measures::acc(predicitons$truth_sign, predicitons$response_sign)
-predicitons_sample = predicitons[response > 0.5]
-mlr3measures::acc(predicitons_sample$truth_sign, predicitons_sample$response_sign)
-predicitons_sample[, .(
-  benchmark = mean(predicitons$truth),
-  strategy  = mean(truth)
-)]
-
-# important predictors
-resample_res = as.data.table(bmr_$resample_result(1))
-resample_res$learner[[1]]$state$model$learner$state$model$gausscov_f1st
-
-
-bmr$learners$learner[[1]]
-bmr$learners$learner[[1]]$archive
-test = bmr$resample_result(1)
-test = as.data.table(test)
-test$learner[[1]]$archive
-test$learner[[1]]$tuning_instance$result
-
-
-# # V1 -----------------------------------------------------------------------
-# # tuning instance
-# instance = ti(
-#   task = task_aroundzero_month,
-#   learner = graph_learner,
-#   resampling = custom,
-#   measures = msr("classif.acc"),
-#   terminator = trm("none"),
-#   search_space = search_space
-# )
-#
-# # tuner
-# tuner = tnr("grid_search", batch_size = 4)
-# tuner$optimize(instance)
-#
-# # check results
-# instance$result
-# instance$archive
-# as.data.table(instance$archive)[, resample_result]
-# # first parameter
-# x = as.data.table(instance$archive)[, resample_result][[1]]
-# as.data.table(instance$archive)[, resample_result][[1]]$score()
-# x$learner$param_set$values
-# task_ = task_aroundzero_month$clone()
-# x$learner$predict(task_$filter(rows = customo$test_set(1)))
-# # second parameter
-# x = as.data.table(instance$archive)[, resample_result][[2]]
-# as.data.table(instance$archive)[, resample_result][[2]]$score()
-# x$learner$param_set$values
-# x$learner$predict()
-#
-# # evaluate models on test set
-# instance$archive
-# as.data.table(instance$archive)[, resample_result][[1]]$score()
-# graph_learner_clone = graph_learner$clone()
-# graph_learner_clone$param_set$values = instance$result_learner_param_vals
-# task_train = task_aroundzero_month$clone()
-# task_train$filter(rows = c(custom$train_set(1), custom$test_set(1)))
-# graph_learner_clone$train(task_train)
-# task_test = task_aroundzero_month$clone()
-# task_test$filter(rows = customo$test_set(1))
-# predictions = graph_learner_clone$predict(task_test)
-# predictions$confusion
-# predictions$score(msr("classif.acc"))
-#
-#

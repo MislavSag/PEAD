@@ -304,11 +304,232 @@ if (strategy == "PEAD") {
 rm(prices_events)
 gc()
 
+
+# util function that returns most recently saved predictor object
+get_latest = function(predictors = "RollingExuberFeatures") {
+  f = file.info(list.files("D:/features", full.names = TRUE, pattern = predictors))
+  latest = tail(f[order(f$ctime), ], 1)
+  row.names(latest)
+}
+
+# import existing data
+# OhlcvFeaturesSetSample = fread(get_latest("OhlcvFeaturesSetSample"))
+RollingBidAskFeatures = fread(get_latest("RollingBidAskFeatures"))
+RollingBackCusumFeatures = fread(get_latest("RollingBackCusumFeatures"))
+RollingExuberFeatures = fread(get_latest("RollingExuberFeatures"))
+RollingForecatsFeatures = fread(get_latest("RollingForecatsFeatures"))
+RollingGpdFeatures = fread(get_latest("RollingGpdFeatures"))
+RollingTheftCatch22Features = fread(get_latest("RollingTheftCatch22Features"))
+RollingTheftTsfelFeatures = fread(get_latest("RollingTheftTsfelFeatures"))
+RollingTsfeaturesFeatures = fread(get_latest("RollingTsfeaturesFeatures"))
+RollingWaveletArimaFeatures = fread(get_latest("RollingWaveletArimaFeatures"))
+
+# util function for identifying missing dates and create at_ object
+get_at_ = function(predictors) {
+  new_dataset = fsetdiff(dataset[, .(symbol, date = as.IDate(date))],
+                         predictors[, .(symbol, date)])
+  # new_dataset = new_dataset[date > as.Date("2022-01-01")]
+  new_data <- merge(OhlcvInstance$X,
+                    dataset[new_dataset[, .(symbol, date)]],
+                    by = c("symbol", "date"), all.x = TRUE, all.y = FALSE)
+  at_ <- which(!is.na(new_data$eps))
+  at_
+}
+
+# BidAsk features
+print("Calculate BidAsk features.")
+at_ = get_at_(RollingBidAskFeatures)
+RollingBidAskInstance <- RollingBidAsk$new(windows = c(5, 22, 22 * 6),
+                                           workers = 4L,
+                                           at = at_,
+                                           lag = lag_,
+                                           methods = c("EDGE", "Roll", "OHLC", "OHL.CHL"))
+RollingBidAskFeatures_new = RollingBidAskInstance$get_rolling_features(OhlcvInstance)
+gc()
+
+# merge and save
+RollingBidAskFeatures_new[, date := as.IDate(date)]
+RollingBidAskFeatures_new_merged = rbind(RollingBidAskFeatures, RollingBidAskFeatures_new)
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingBidAskFeatures_new_merged, paste0("D:/features/PEAD-RollingBidAskFeatures-", time_, ".csv"))
+
+# BackCUSUM features
+print("Calculate BackCUSUM features.")
+at_ = get_at_(RollingBackCusumFeatures)
+RollingBackcusumInit = RollingBackcusum$new(windows = c(22 * 3, 22 * 6), workers = 4L,
+                                            at = at_, lag = lag_,
+                                            alternative = c("greater", "two.sided"),
+                                            return_power = c(1, 2))
+RollingBackCusumFeatures_new = RollingBackcusumInit$get_rolling_features(OhlcvInstance)
+gc()
+
+# merge and save
+RollingBackCusumFeatures_new[, date := as.IDate(date)]
+RollingBackCusumFeatures_new_merged = rbind(RollingBackCusumFeatures, RollingBackCusumFeatures_new)
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingBackCusumFeatures_new_merged, paste0("D:/features/PEAD-RollingBackCusumFeatures-", time_, ".csv"))
+
+# Exuber features
+print("Calculate Exuber features.")
+at_ = get_at_(RollingExuberFeatures)
+RollingExuberInit = RollingExuber$new(windows = c(100, 300, 600),
+                                      workers = 6L,
+                                      at = at_,
+                                      lag = lag_,
+                                      exuber_lag = 1L)
+RollingExuberFeaturesNew = RollingExuberInit$get_rolling_features(OhlcvInstance, TRUE)
+gc()
+
+# merge and save
+RollingExuberFeaturesNew[, date := as.IDate(date)]
+RollingExuberFeatures_new_merged = rbind(RollingExuberFeatures, RollingExuberFeaturesNew)
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingExuberFeatures_new_merged, paste0("D:/features/PEAD-RollingExuberFeatures-", time_, ".csv"))
+
+# Forecast Features
+print("Calculate AutoArima features.")
+at_ = get_at_(RollingForecatsFeatures)
+RollingForecatsInstance = RollingForecats$new(windows = c(252 * 2), workers = 4L,
+                                              lag = lag_, at = at_,
+                                              forecast_type = c("autoarima", "nnetar", "ets"),
+                                              h = 22)
+RollingForecatsFeaturesNew = RollingForecatsInstance$get_rolling_features(OhlcvInstance)
+
+# merge and save
+RollingForecatsFeaturesNew[, date := as.IDate(date)]
+RollingForecatsFeaturesNewMerged = rbind(RollingForecatsFeatures, RollingForecatsFeaturesNew)
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingForecatsFeaturesNewMerged, paste0("D:/features/PEAD-RollingForecatsFeatures-", time_, ".csv"))
+
+# # GAS
+# print("Calculate GAS features.")
+# RollingGasInit = RollingGas$new(windows = c(100, 252),
+#                                 workers = 6L,
+#                                 at = at_,
+#                                 lag = lag_,
+#                                 gas_dist = "sstd",
+#                                 gas_scaling = "Identity",
+#                                 prediction_horizont = 10)
+# RollingGasFeatures = RollingGasInit$get_rolling_features(OhlcvInstance)
+# # ERROR:
+# #   Error in merge.data.table(x, y, by = c("symbol", "date"), all.x = TRUE,  :
+# #                               Elements listed in `by` must be valid column names in x and y
+# #                             In addition: Warning message:
+# #                               In merge.data.table(x, y, by = c("symbol", "date"), all.x = TRUE,  :
+# #
+# #                                                     Error in merge.data.table(x, y, by = c("symbol", "date"), all.x = TRUE, :
+# #                                                                                 Elements listed in `by` must be valid column names in x and y
+#
+# # save
+# time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+# fwrite(RollingGasFeatures, paste0("D:/features/PEAD-RollingGasFeatures-", time_, ".csv"))
+
+# Gpd features
+print("Calculate Gpd features.")
+at_ = get_at_(RollingGpdFeatures)
+RollingGpdInit = RollingGpd$new(windows = c(22 * 3, 22 * 6), workers = 6L,
+                                at = at_, lag = lag_,
+                                threshold = c(0.03, 0.05, 0.07))
+RollingGpdFeaturesNew = RollingGpdInit$get_rolling_features(OhlcvInstance)
+
+# merge and save
+RollingGpdFeaturesNew[, date := as.IDate(date)]
+# cols = colnames(RollingGpdFeatures)
+# RollingGpdFeaturesNew = RollingGpdFeaturesNew[, ..cols]
+RollingGpdFeaturesNewMerged = rbind(RollingGpdFeatures, RollingGpdFeaturesNew, fill = TRUE)
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingGpdFeaturesNewMerged, paste0("D:/features/PEAD-RollingGpdFeatures-", time_, ".csv"))
+
+# theft catch22 features
+print("Calculate Catch22 and feasts features.")
+at_ = get_at_(RollingTheftCatch22Features)
+RollingTheftInit = RollingTheft$new(windows = c(5, 22, 22 * 3, 22 * 12),
+                                    workers = 6L, at = at_, lag = lag_,
+                                    features_set = c("catch22", "feasts"))
+RollingTheftCatch22FeaturesNew = RollingTheftInit$get_rolling_features(OhlcvInstance)
+gc()
+
+# save
+RollingTheftCatch22FeaturesNew[, date := as.IDate(date)]
+RollingTheftCatch22Features[, c("feasts____22_5", "feasts____25_22") := NULL]
+# cols = colnames(RollingTheftCatch22Features)
+# RollingTheftCatch22FeaturesNew = RollingTheftCatch22FeaturesNew[, ..cols]
+RollingTheftCatch22FeaturesNewMerged = rbind(RollingTheftCatch22Features, RollingTheftCatch22FeaturesNew)
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingTheftCatch22FeaturesNewMerged, paste0("D:/features/PEAD-RollingTheftCatch22Features-", time_, ".csv"))
+
+# tsfeatures features
+print("Calculate tsfeatures features.")
+at_ = get_at_(RollingTsfeaturesFeatures)
+RollingTsfeaturesInit = RollingTsfeatures$new(windows = c(22 * 3, 22 * 6),
+                                              workers = 6L, at = at_,
+                                              lag = lag_, scale = TRUE)
+RollingTsfeaturesFeaturesNew = RollingTsfeaturesInit$get_rolling_features(OhlcvInstance)
+gc()
+
+# save
+RollingTsfeaturesFeaturesNew[, date := as.IDate(date)]
+RollingTsfeaturesFeaturesNewMerged = rbind(RollingTsfeaturesFeatures, RollingTsfeaturesFeaturesNew)
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingTsfeaturesFeaturesNewMerged, paste0("D:/features/PEAD-RollingTsfeaturesFeatures-", time_, ".csv"))
+
+# theft tsfel features, Must be alone, because number of workers have to be 1L
+print("Calculate tsfel features.")
+at_ = get_at_(RollingTheftTsfelFeatures)
+RollingTheftInit = RollingTheft$new(windows = c(22 * 3, 22 * 12), workers = 1L,
+                                    at = at_, lag = lag_,  features_set = "TSFEL")
+RollingTheftTsfelFeaturesNew = suppressMessages(RollingTheftInit$get_rolling_features(OhlcvInstance))
+
+# save
+RollingTheftTsfelFeaturesNew[, date := as.IDate(date)]
+RollingTheftTsfelFeaturesNewMerged = rbind(RollingTheftTsfelFeatures, RollingTheftTsfelFeaturesNew, fill = TRUE)
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingTheftTsfelFeaturesNewMerged, paste0("D:/features/PEAD-RollingTheftTsfelFeatures-", time_, ".csv"))
+
+# # quarks
+# at_ = get_at_(RollingQuarksFeatures)
+# RollingQuarksInit = RollingQuarks$new(windows = 22 * 6, workers = 6L, at = at_,
+#                                       lag = lag_, model = c("EWMA", "GARCH"),
+#                                       method = c("plain", "age"))
+# RollingQuarksFeaturesNew = RollingQuarksInit$get_rolling_features(OhlcvInstance)
+# gc()
+#
+# # save
+# RollingQuarksFeaturesNew[, date := as.IDate(date)]
+# RollingQuarksFeaturesNewMerged = rbind(RollingQuarksFeatures, RollingQuarksFeaturesNew)
+# time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+# fwrite(RollingQuarksFeaturesNewMerged, paste0("D:/features/PEAD-RollingQuarksFeatures-", time_, ".csv"))
+
+# TVGARCH
+# SLOW !!!
+# Error:
+# Error in checkForRemoteErrors(val) :
+#   one node produced an error: system is computationally singular: reciprocal condition number = 1.63061e-16
+# RollingTvgarchInit = RollingTvgarch$new(windows = 22 * 6,
+#                                         workers = 6L,
+#                                         at = at_,
+#                                         lag = lag_,
+#                                         na_pad = TRUE,
+#                                         simplify = FALSE)
+# RollingTvgarchFeatures = RollingTvgarchInit$get_rolling_features(OhlcvInstance)
+
+# Wavelet arima
+at_ = get_at_(RollingWaveletArimaFeatures)
+RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6L,
+                                                      lag = lag_, at = at_, filter = "haar")
+RollingWaveletArimaFeaturesNew = RollingWaveletArimaInstance$get_rolling_features(OhlcvInstance)
+gc()
+
+# save
+RollingWaveletArimaFeaturesNew[, date := as.IDate(date)]
+RollingWaveletArimaFeaturesNewMerged = rbind(RollingWaveletArimaFeatures, RollingWaveletArimaFeaturesNew)
+time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+fwrite(RollingWaveletArimaFeaturesNewMerged, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
+
 # prepare arguments for features
 prices_events <- merge(prices_dt, dataset[, .(symbol, date, eps)],
                        by = c("symbol", "date"), all.x = TRUE, all.y = FALSE)
 at_ <- which(!is.na(prices_events$eps))
-
 
 # Features from OHLLCV
 print("Calculate Ohlcv features.")
@@ -332,182 +553,7 @@ gc()
 time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
 fwrite(OhlcvFeaturesSetSample, paste0("D:/features/PEAD-OhlcvFeaturesSetSample-", time_, ".csv"))
 
-# util function that returns most recently saved predictor object
-get_latest = function(predictors = "RollingExuberFeatures") {
-  f = file.info(list.files("D:/features", full.names = TRUE, pattern = predictors))
-  latest = tail(f[order(f$ctime), ], 1)
-  row.names(latest)
-}
 
-# import saved RollingBidAskFeatures data
-RollingBidAskFeatures = fread(get_latest("RollingBidAskFeatures"))
-
-# get new data
-new_dataset = fsetdiff(dataset[, .(symbol, date = as.IDate(date))],
-                       RollingBidAskFeatures[, .(symbol, date)])
-new_data <- merge(prices_dt, dataset[new_dataset[, .(symbol, date)]],
-                  by = c("symbol", "date"), all.x = TRUE, all.y = FALSE)
-at_ <- which(!is.na(new_data$eps))
-
-# BidAsk features
-print("Calculate BidAsk features.")
-RollingBidAskInstance <- RollingBidAsk$new(windows = c(5, 22, 22 * 6),
-                                           workers = 6L,
-                                           at = at_,
-                                           lag = lag_,
-                                           methods = c("EDGE", "Roll", "OHLC", "OHL.CHL"))
-RollingBidAskFeatures_new = RollingBidAskInstance$get_rolling_features(OhlcvInstance)
-gc()
-# DEBUG
-head(dataset[, .(symbol, date)])
-head(RollingBidAskFeatures[symbol == "AA", .(symbol, date)])
-
-# save Ohlcv data
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingBidAskFeatures, paste0("D:/features/PEAD-RollingBidAskFeatures-", time_, ".csv"))
-
-# BackCUSUM features
-print("Calculate BackCUSUM features.")
-RollingBackcusumInit = RollingBackcusum$new(windows = c(22 * 3, 22 * 6), workers = 6L,
-                                            at = at_, lag = lag_,
-                                            alternative = c("greater", "two.sided"),
-                                            return_power = c(1, 2))
-RollingBackCusumFeatures = RollingBackcusumInit$get_rolling_features(OhlcvInstance)
-gc()
-
-# save Ohlcv data
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingBackCusumFeatures, paste0("D:/features/PEAD-RollingBackCusumFeatures-", time_, ".csv"))
-
-# Exuber features
-print("Calculate Exuber features.")
-RollingExuberInit = RollingExuber$new(windows = c(100, 300, 600),
-                                      workers = 6L,
-                                      at = at_,
-                                      lag = lag_,
-                                      exuber_lag = 1L)
-RollingExuberFeatures = RollingExuberInit$get_rolling_features(OhlcvInstance, TRUE)
-head(dataset[, .(symbol, date)])
-head(RollingExuberFeatures[symbol == "A", .(symbol, date)])
-gc()
-
-# save
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingExuberFeatures, paste0("D:/features/PEAD-RollingExuberFeatures-", time_, ".csv"))
-
-# Forecast Features
-print("Calculate AutoArima features.")
-RollingForecatsInstance = RollingForecats$new(windows = c(252 * 2), workers = 6L,
-                                              lag = lag_, at = at_,
-                                              forecast_type = c("autoarima", "nnetar", "ets"),
-                                              h = 22)
-RollingForecatsFeatures = RollingForecatsInstance$get_rolling_features(OhlcvInstance)
-
-# save
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingForecatsFeatures, paste0("D:/features/PEAD-RollingForecatsFeatures-", time_, ".csv"))
-
-# GAS
-print("Calculate GAS features.")
-RollingGasInit = RollingGas$new(windows = c(100, 252),
-                                workers = 6L,
-                                at = at_,
-                                lag = lag_,
-                                gas_dist = "sstd",
-                                gas_scaling = "Identity",
-                                prediction_horizont = 10)
-RollingGasFeatures = RollingGasInit$get_rolling_features(OhlcvInstance)
-# ERROR:
-#   Error in merge.data.table(x, y, by = c("symbol", "date"), all.x = TRUE,  :
-#                               Elements listed in `by` must be valid column names in x and y
-#                             In addition: Warning message:
-#                               In merge.data.table(x, y, by = c("symbol", "date"), all.x = TRUE,  :
-#
-#                                                     Error in merge.data.table(x, y, by = c("symbol", "date"), all.x = TRUE, :
-#                                                                                 Elements listed in `by` must be valid column names in x and y
-
-# save
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingGasFeatures, paste0("D:/features/PEAD-RollingGasFeatures-", time_, ".csv"))
-
-# Gpd features
-print("Calculate Gpd features.")
-RollingGpdInit = RollingGpd$new(windows = c(22 * 3, 22 * 6), workers = 6L,
-                                at = at_, lag = lag_,
-                                threshold = c(0.03, 0.05, 0.07))
-RollingGpdFeatures = RollingGpdInit$get_rolling_features(OhlcvInstance)
-
-# save
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingGpdFeatures, paste0("D:/features/PEAD-RollingGpdFeatures-", time_, ".csv"))
-
-# theft catch22 features
-print("Calculate Catch22 and feasts features.")
-RollingTheftInit = RollingTheft$new(windows = c(5, 22, 22 * 3, 22 * 12),
-                                    workers = 6L, at = at_, lag = lag_,
-                                    features_set = c("catch22", "feasts"))
-RollingTheftCatch22Features = RollingTheftInit$get_rolling_features(OhlcvInstance)
-gc()
-
-# save
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingTheftCatch22Features, paste0("D:/features/PEAD-RollingTheftCatch22Features-", time_, ".csv"))
-
-# tsfeatures features
-print("Calculate tsfeatures features.")
-RollingTsfeaturesInit = RollingTsfeatures$new(windows = c(22 * 3, 22 * 6),
-                                              workers = 6L, at = at_,
-                                              lag = lag_, scale = TRUE)
-RollingTsfeaturesFeatures = RollingTsfeaturesInit$get_rolling_features(OhlcvInstance)
-gc()
-
-# save
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingTsfeaturesFeatures, paste0("D:/features/PEAD-RollingTsfeaturesFeatures-", time_, ".csv"))
-
-# theft tsfel features, Must be alone, because number of workers have to be 1L
-print("Calculate tsfel features.")
-RollingTheftInit = RollingTheft$new(windows = c(22 * 3, 22 * 12), workers = 1L,
-                                    at = at_, lag = lag_,  features_set = "TSFEL")
-RollingTheftTsfelFeatures = suppressMessages(RollingTheftInit$get_rolling_features(OhlcvInstance))
-
-# save
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingTheftTsfelFeatures, paste0("D:/features/PEAD-RollingTheftTsfelFeatures-", time_, ".csv"))
-
-# quarks
-RollingQuarksInit = RollingQuarks$new(windows = 22 * 6, workers = 6L, at = at_,
-                                      lag = lag_, model = c("EWMA", "GARCH"),
-                                      method = c("plain", "age"))
-RollingQuarksFeatures = RollingQuarksInit$get_rolling_features(OhlcvInstance)
-gc()
-
-# save
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingQuarksFeatures, paste0("D:/features/PEAD-RollingQuarksFeatures-", time_, ".csv"))
-
-# TVGARCH
-# SLOW !!!
-# Error:
-# Error in checkForRemoteErrors(val) :
-#   one node produced an error: system is computationally singular: reciprocal condition number = 1.63061e-16
-# RollingTvgarchInit = RollingTvgarch$new(windows = 22 * 6,
-#                                         workers = 6L,
-#                                         at = at_,
-#                                         lag = lag_,
-#                                         na_pad = TRUE,
-#                                         simplify = FALSE)
-# RollingTvgarchFeatures = RollingTvgarchInit$get_rolling_features(OhlcvInstance)
-
-# Wavelet arima
-RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6L,
-                                                      lag = lag_, at = at_, filter = "haar")
-RollingWaveletArimaFeatures = RollingWaveletArimaInstance$get_rolling_features(OhlcvInstance)
-gc()
-
-# save
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingWaveletArimaFeatures, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
 
 # util function that returns most recently saved predictor object
 get_latest = function(predictors = "RollingExuberFeatures") {
@@ -555,7 +601,8 @@ tail(rolling_predictors[symbol == s, 1:5])
 
 ### Importmant notes:
 # 1. OhlcvFeaturesSetSample has date columns one trading day after the event date.
-# 2. Rolling predictors have date column that is the same as event date
+# 2. Rolling predictors have date column that is the same as event date, but
+# the predictor is calculated for one day lead
 # 3. So, we have to merge OhlcvFeaturesSetSample with roling from behind.
 
 # merge

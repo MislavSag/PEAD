@@ -1,0 +1,31 @@
+Bootstrap: docker
+From: r-base:4.3.0
+
+%post
+
+  # apt
+  apt update
+  apt install libssl-dev -y
+  apt install libxml2-dev -y
+  apt install libcurl4-openssl-dev -y
+
+  # mlr3
+  R --slave -e 'install.packages("AzureStor")'
+  R --slave -e 'install.packages("data.table")'
+  R --slave -e 'install.packages("future")'
+  R --slave -e 'install.packages("future.apply")'
+  R --slave -e 'install.packages("gausscov")'
+  R --slave -e 'install.packages("igraph")'
+  R --slave -e 'install.packages("mlr3")'
+  R --slave -e 'install.packages("mlr3misc")'
+  R --slave -e 'install.packages("mlr3pipelines")'
+  R --slave -e 'install.packages("mlr3tuning")'
+  R --slave -e 'install.packages("mlr3verse")'
+  R --slave -e 'install.packages("mlr3viz")'
+  R --slave -e 'install.packages("paradox")'
+  R --slave -e 'install.packages("ranger")'
+  R --slave -e 'install.packages("R6")'
+  R --slave -e 'install.packages("bit64")'
+
+%runscript
+  Rscript $@
