@@ -501,7 +501,7 @@ lapply(custom_cvs, function(cv_) {
   cv_outer = cv_$custom_outer
   cat("Number of iterations fo cv inner is ", cv_inner$iters, "\n")
 
-  nested_cv_benchmark(i)
+  nested_cv_benchmark(i, cv_inner, cv_outer)
 })
 
 end_time = Sys.time()
