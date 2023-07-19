@@ -478,7 +478,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   # nested CV for one round
   print("Benchmark!")
   design = benchmark_grid(
-    tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_q),
+    tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
     learners = list(at_rf, at_xgboost),
     resamplings = customo_
   )
@@ -488,7 +488,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   # save locally and to list
   print("Save")
   time_ = format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-  saveRDS(bmr, file.path(mlr3_save_path, paste0(i, "-", time_, ".rds")))
+  saveRDS(bmr, file.path(mlr3_save_path, paste0(i, "-", cv_inner$iters, "-", time_, ".rds")))
   return(NULL)
 }
 
