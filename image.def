@@ -26,6 +26,14 @@ From: r-base:4.3.0
   R --slave -e 'install.packages("ranger")'
   R --slave -e 'install.packages("R6")'
   R --slave -e 'install.packages("bit64")'
+  R --slave -e 'install.packages("xgboost")'
+  R --slave -e 'install.packages("dbarts")'
+  R --slave -e 'install.packages("nnet")'
+  R --slave -e 'install.packages("remotes")'
+  R --slave -e 'remotes::install_github("mlr-org/mlr3extralearners@*release")'
+  R --slave -e 'install.packages("torch")'
+  R --slave -e 'torch::install_torch()'
+  R --slave -e 'remotes::install_github("mlr-org/mlr3torch")'
 
 %runscript
   Rscript $@
