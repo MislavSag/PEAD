@@ -297,8 +297,8 @@ graph_template =
   # filters
   po("branch", options = c("jmi", "gausscov", "nop_filter"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
-              po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0),
-              po("nop", id = "nop_filter"))) %>>%
+              po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0))) %>>%
+              # po("nop", id = "nop_filter"))) %>>%
   po("unbranch", id = "filter_unbranch") %>>%
   # modelmatrix
   po("branch", options = c("nop_interaction", "modelmatrix"), id = "interaction_branch") %>>%
