@@ -386,9 +386,9 @@ graph_bart = as_learner(graph_bart)
 as.data.table(graph_bart$param_set)[, .(id, class, lower, upper, levels)]
 search_space_bart = search_space_template$clone()
 search_space_bart$add(
-  ps(regr.bart.k = p_int(lower = 1, upper = 10),
-     regr.bart.nu = p_dbl(lower = 0.1, upper = 10),
-     regr.bart.n_trees = p_int(lower = 10, upper = 100))
+  ps(regr.bart.k = p_int(lower = 1, upper = 10))
+     # regr.bart.nu = p_dbl(lower = 0.1, upper = 10),
+     # regr.bart.n_trees = p_int(lower = 10, upper = 100))
 )
 # chatgpt returns this
 # n_trees = p_int(lower = 10, upper = 100),
@@ -508,7 +508,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_bart, at_nnet, at_lightgbm),
+    learners = list(at_rf, at_xgboost, at_bart, at_lightgbm), # at_nnet
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = TRUE)
