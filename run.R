@@ -297,7 +297,7 @@ graph_template =
   # filters
   po("branch", options = c("jmi", "gausscov", "nop_filter"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
-              po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0),
+              po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0),
               po("nop", id = "nop_filter"))) %>>%
   po("unbranch", id = "filter_unbranch") %>>%
   # modelmatrix
@@ -425,13 +425,13 @@ search_space_lightgbm$add(
      regr.lightgbm.num_leaves    = p_int(lower = 10, upper = 100))
 )
 
-
 # threads
 threads = as.integer(Sys.getenv("NCPUS"))
 set_threads(graph_rf, n = threads)
 set_threads(graph_xgboost, n = threads)
 set_threads(graph_bart, n = threads)
 set_threads(graph_nnet, n = threads)
+set_threads(graph_lightgbm, n = threads)
 
 
 # NESTED CV BENCHMARK -----------------------------------------------------

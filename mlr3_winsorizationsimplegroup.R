@@ -1,3 +1,11 @@
+# In addition: Warning messages:
+#   1: PipeOp PipeOpWinsorizeSimpleGroup has construction arguments besides 'id'
+# and 'param_vals' but does not overload the private '.additional_phash_input()' function.
+#
+# The hash and phash of a PipeOp must differ when it represents a different operation; since PipeOpWinsorizeSimpleGroup has construction arguments that could change the
+# operation that is performed by it, it is necessary for the $hash and $phash to reflect this. `.additional_phash_input()`
+# should return all the information (e.g. hashes of encapsulated items) that should additionally be hashed; read the help of ?PipeOp for more information.
+
 # library(mlr3pipelines)
 # library(mlr3verse)
 # library(mlr3misc)
@@ -93,7 +101,9 @@ PipeOpWinsorizeSimpleGroup = R6::R6Class(
       # print(dim(dt))
 
       task$select(setdiff(task$feature_names, cols))$cbind(dt)
-    }
+    },
+
+    .additional_phash_input = function() self$group_var
 
     # .get_state_dt = function(dt, levels, target) {
     #   # debug
