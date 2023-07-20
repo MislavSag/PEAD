@@ -295,19 +295,15 @@ graph_template =
   po("uniformization") %>>%
   po("dropna", id = "dropna_v2") %>>%
   # filters
-  # po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0) %>>%
-  po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0) %>>%
-  # gunion(list(
-  #   po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0),
-  # po("filter", filter = flt("correlation"), filter.nfeat = 3)
-  # po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0),
-  # po("learner_cv", lrn("regr.ranger", max.depth = 3))
-  # )) %>>%
-  # po("featureunion") %>>%
+  po("branch", options = c("jmi", "gausscov", "nop_filter"), id = "filter_branch") %>>%
+  gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
+              po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0),
+              po("nop", id = "nop_filter"))) %>>%
+  po("unbranch", id = "filter_unbranch") %>>%
   # modelmatrix
-  po("branch", options = c("nop_filter", "modelmatrix"), id = "interaction_branch") %>>%
+  po("branch", options = c("nop_interaction", "modelmatrix"), id = "interaction_branch") %>>%
   gunion(list(
-    po("nop", id = "nop_filter"),
+    po("nop", id = "nop_interaction"),
     po("modelmatrix", formula = ~ . ^ 2))) %>>%
   po("unbranch", id = "interaction_unbranch") %>>%
   po("removeconstants", id = "removeconstants_3", ratio = 0)
@@ -331,24 +327,30 @@ search_space_template = ps(
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # filters
-  interaction_branch.selection = p_fct(levels = c("nop_filter", "modelmatrix"))
+  filter_branch.selection = p_fct(levels = c("jmi", "gausscov", "nop_filter")),
+  # interaction
+  interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix"))
 )
 
 # random forest graph
 graph_rf = graph_template %>>%
   po("learner", learner = lrn("regr.ranger"))
+plot(graph_rf)
 graph_rf = as_learner(graph_rf)
 as.data.table(graph_rf$param_set)[, .(id, class, lower, upper, levels)]
 search_space_rf = search_space_template$clone()
 search_space_rf$add(
-  ps(regr.ranger.max.depth = p_int(1, 40))
+  ps(regr.ranger.max.depth  = p_int(1, 40),
+     regr.ranger.replace    = p_lgl(),
+     regr.ranger.mtry.ratio = p_dbl(0.1, 1))
 )
 
 # xgboost graph
 graph_xgboost = graph_template %>>%
   po("learner", learner = lrn("regr.xgboost"))
+plot(graph_xgboost)
 graph_xgboost = as_learner(graph_xgboost)
-as.data.table(graph_xgboost$param_set)[grep("alpha", id), .(id, class, lower, upper, levels)]
+as.data.table(graph_xgboost$param_set)[grep("depth", id), .(id, class, lower, upper, levels)]
 search_space_xgboost = ps(
   # subsample for hyperband
   subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
@@ -367,9 +369,14 @@ search_space_xgboost = ps(
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # filters
-  interaction_branch.selection = p_fct(levels = c("nop_filter", "modelmatrix")),
+  filter_branch.selection = p_fct(levels = c("jmi", "gausscov", "nop_filter")),
+  # interaction
+  interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
-  regr.xgboost.alpha = p_dbl(0.001, 100, logscale = TRUE)
+  regr.xgboost.alpha     = p_dbl(0.001, 100, logscale = TRUE),
+  regr.xgboost.max_depth = p_int(1, 20),
+  regr.xgboost.eta       = p_dbl(0.0001, 1, logscale = TRUE),
+  regr.xgboost.nrounds   = p_int(1, 5000)
 )
 
 # BART graph
@@ -406,13 +413,25 @@ search_space_nnet$add(
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
 
+# lightgbm graph
+graph_lightgbm = graph_template %>>%
+  po("learner", learner = lrn("regr.lightgbm"))
+graph_lightgbm = as_learner(graph_lightgbm)
+as.data.table(graph_lightgbm$param_set)[grep("sample", id), .(id, class, lower, upper, levels)]
+search_space_lightgbm = search_space_template$clone()
+search_space_lightgbm$add(
+  ps(regr.lightgbm.max_depth     = p_int(lower = 2, upper = 10),
+     regr.lightgbm.learning_rate = p_dbl(lower = 0.001, upper = 0.3),
+     regr.lightgbm.num_leaves    = p_int(lower = 10, upper = 100))
+)
+
+
 # threads
 threads = as.integer(Sys.getenv("NCPUS"))
 set_threads(graph_rf, n = threads)
 set_threads(graph_xgboost, n = threads)
 set_threads(graph_bart, n = threads)
 set_threads(graph_nnet, n = threads)
-
 
 
 # NESTED CV BENCHMARK -----------------------------------------------------

@@ -300,8 +300,8 @@ graph_template =
   po("uniformization") %>>%
   po("dropna", id = "dropna_v2") %>>%
   # filters
-  # po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0) %>>%
-  po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0) %>>%
+  po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0) %>>%
+  # po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0) %>>%
   # gunion(list(
   #   po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0),
   # po("filter", filter = flt("correlation"), filter.nfeat = 3)
