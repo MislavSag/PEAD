@@ -480,13 +480,23 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     terminator = trm("none")
   )
 
-  # auto tuner BART
+  # auto tuner nnet
   at_nnet = auto_tuner(
     tuner = tnr("hyperband", eta = 5),
     learner = graph_nnet,
     resampling = custom_,
     measure = msr("adjloss2"),
     search_space = search_space_nnet,
+    terminator = trm("none")
+  )
+
+  # auto tuner nnet
+  at_lightgbm = auto_tuner(
+    tuner = tnr("hyperband", eta = 5),
+    learner = graph_lightgbm,
+    resampling = custom_,
+    measure = msr("adjloss2"),
+    search_space = search_space_lightgbm,
     terminator = trm("none")
   )
 
@@ -498,7 +508,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost),
+    learners = list(at_rf, at_xgboost, at_bart, at_nnet, at_lightgbm),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = TRUE)
