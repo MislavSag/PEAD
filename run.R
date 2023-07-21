@@ -295,7 +295,7 @@ graph_template =
   po("uniformization") %>>%
   po("dropna", id = "dropna_v2") %>>%
   # filters
-  po("branch", options = c("jmi", "gausscov", "nop_filter"), id = "filter_branch") %>>%
+  po("branch", options = c("jmi", "gausscov"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
               po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0))) %>>%
               # po("nop", id = "nop_filter"))) %>>%
@@ -327,7 +327,7 @@ search_space_template = ps(
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscov", "nop_filter")),
+  filter_branch.selection = p_fct(levels = c("jmi", "gausscov")),
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix"))
 )
@@ -369,7 +369,7 @@ search_space_xgboost = ps(
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscov", "nop_filter")),
+  filter_branch.selection = p_fct(levels = c("jmi", "gausscov")),
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
