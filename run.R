@@ -414,6 +414,12 @@ search_space_nnet$add(
 )
 
 # lightgbm graph
+# [LightGBM] [Fatal] Do not support special JSON characters in feature name.
+# Error in makeModelMatrixFromDataFrame(x.test, if (!is.null(drop)) drop else TRUE) :
+#   when list, drop must have length equal to x
+# This happened PipeOp regr.bart's $predict()
+# Calls: lapply ... resolve.list -> signalConditionsASAP -> signalConditions
+# Execution halted
 graph_lightgbm = graph_template %>>%
   po("learner", learner = lrn("regr.lightgbm"))
 graph_lightgbm = as_learner(graph_lightgbm)
@@ -508,7 +514,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_bart, at_lightgbm), # at_nnet
+    learners = list(at_rf, at_xgboost), # at_nnet, at_bart, at_lightgbm
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = TRUE)
