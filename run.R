@@ -403,12 +403,12 @@ search_space_bart$add(
 
 # nnet graph
 graph_nnet = graph_template %>>%
-  po("learner", learner = lrn("regr.nnet"))
+  po("learner", learner = lrn("regr.nnet", MaxNWts = 35000))
 graph_nnet = as_learner(graph_nnet)
 as.data.table(graph_nnet$param_set)[, .(id, class, lower, upper, levels)]
 search_space_nnet = search_space_template$clone()
 search_space_nnet$add(
-  ps(regr.nnet.size = p_int(lower = 5, upper = 50),
+  ps(regr.nnet.size = p_int(lower = 5, upper = 35),
      regr.nnet.decay = p_dbl(lower = 0.0001, upper = 0.1),
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
@@ -448,6 +448,7 @@ list.files(mlr3_save_path, full.names = TRUE)
 nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # debug
+  # i = 1
   print(i)
 
   # inner resampling
@@ -496,7 +497,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     terminator = trm("none")
   )
 
-  # auto tuner nnet
+  # auto tuner lightgbm
   at_lightgbm = auto_tuner(
     tuner = tnr("hyperband", eta = 5),
     learner = graph_lightgbm,
@@ -514,7 +515,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost), # at_nnet, at_bart, at_lightgbm
+    learners = list(at_rf, at_xgboost, at_nnet, graph_lightgbm), # at_nnet, at_bart, at_lightgbm
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = TRUE)
@@ -530,6 +531,9 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
 start_time = Sys.time()
 lapply(custom_cvs, function(cv_) {
+
+  # debug
+  # cv_ = custom_cvs[[1]]
 
   # get cv inner object
   cv_inner = cv_$custom_inner

@@ -5,36 +5,32 @@ library(AzureStor)
 
 
 # setup
-blob_key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJLu1wVE6HT+ASt0DdAPQ=="
-endpoint = "https://snpmarketdata.blob.core.windows.net/"
-BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
-mlr3_save_path = "D:/mlfin/cvresults-pead-v7"
+PATH = "C:/Users/Mislav/SynologyDrive/H4/new"
+mlr3_save_path = list.files(PATH, pattern = "H4-", full.names = TRUE)
 
 # utils
 id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 
 # set files with benchmarks
-results_files = file.info(list.files(mlr3_save_path, full.names = TRUE))
-bmr_files = rownames(results_files)
+bmr_files = list.files(mlr3_save_path, full.names = TRUE)
 
-# if duplicated lst first, vice versa
-if (any(duplicated(gsub("-\\d+\\.rds", "", bmr_files)))) {
-  results_files$path_fold = gsub("-\\d+\\.rds", "", rownames(results_files))
-  results_files = results_files[order(results_files$path_fold, results_files$ctime), ]
-  bmr_files = results_files[(!duplicated(results_files[, c("path_fold")], fromLast = TRUE)), ]
-  bmr_files = rownames(bmr_files)
-}
+# arrange files
+cv_ = as.integer(gsub("\\d+-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
+i_ = as.integer(gsub("-\\d+", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
+bmr_files = cbind.data.frame(bmr_files, cv = cv_, i = i_)
+setorder(bmr_files, cv, i)
 
 # extract needed information from banchmark objects
 predictions_l = list()
 imp_features_gausscov_l = list()
 imp_features_corr_l = list()
-for (i in 1:length(bmr_files)) {
+for (i in 1:nrow(bmr_files)) {
   # debug
+  # i = 1
   print(i)
 
   # get bmr object
-  bmr = readRDS(bmr_files[i])
+  bmr = readRDS(bmr_files$bmr_files[i])
   bmr_dt = as.data.table(bmr)
 
   # get backends
@@ -45,24 +41,28 @@ for (i in 1:length(bmr_files)) {
                       rows = 1:bmr_dt$task[[1]]$nrow)
   })
   backs = lapply(seq_along(backs), function(i) cbind(task = task_names[[i]],
-                                                     learner = learner_names[[1]],
+                                                     learner = learner_names[[i]],
                                                      backs[[i]]))
   lapply(backs, setnames, "..row_id", "row_ids")
 
   # get predictions
   predictions = lapply(bmr_dt$prediction, function(x) as.data.table(x))
-  names(predictions) <- task_names
+  predictions = lapply(seq_along(predictions), function(j)
+    cbind(task = task_names[[j]],
+          learner = learner_names[[j]],
+          predictions[[j]]))
 
   # merge backs and predictions
-  predictions <- lapply(seq_along(task_names), function(i) {
-    y = backs[[i]][predictions[[i]], on = "row_ids"]
+  predictions <- lapply(seq_along(predictions), function(j) {
+    y = backs[[j]][predictions[[j]], on = c("task", "learner", "row_ids")]
     y[, date := as.Date(date, origin = "1970-01-01")]
-    cbind(task_name = x, y)
+    y
   })
   predictions = rbindlist(predictions)
 
   # add meta
-  predictions = cbind(cv = stringr::str_extract(gsub(".*/", "", bmr_files[i]), "cv-\\d+"),
+  predictions = cbind(cv = bmr_files$cv[i],
+                      i = bmr_files$i[i],
                       predictions)
 
   # # best params
@@ -70,7 +70,7 @@ for (i in 1:length(bmr_files)) {
   # archives = lapply(bmr_dt$learner, function(x) x$tuning_instance$archive)
   #
   # most important variables
-  imp_features_gausscov_l[[i]] = bmr_dt$learner[[1]]$state$model$learner$state$model$gausscov_f1st$features
+  # imp_features_gausscov_l[[i]] = bmr_dt$learner[[1]]$state$model$learner$state$model$gausscov_f1st$features
   # imp_features_corr_l[[i]] = bmr_dt$learner[[1]]$state$model$learner$state$model$correlation$features
 
   # best models
@@ -92,18 +92,18 @@ predictions_dt[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign = as.factor(sign(response))
 )]
-setorderv(predictions_dt, c("cv", "task_name", "date"))
-predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task_name")]
-predictions_dt[response > 0.1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task_name")]
-predictions_dt[response > 0.2, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task_name")]
-predictions_dt[response > 0.5, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task_name")]
-predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task_name")]
+setorderv(predictions_dt, c("cv", "i", "date"))
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
+predictions_dt[response > 0.1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
+predictions_dt[response > 0.2, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
+predictions_dt[response > 0.5, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
+predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
 
 # hit ratio with positive surprise
-predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = .(cv, task_name, eps_diff > 0)]
-predictions_dt[response > 0.1, mlr3measures::acc(truth_sign, response_sign), by = .(cv, task_name, eps_diff > 0)]
-predictions_dt[response > 0.5, mlr3measures::acc(truth_sign, response_sign), by = .(cv, task_name, eps_diff > 0)]
-predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = .(cv, task_name, eps_diff > 0)]
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = .(cv, task, learner, eps_diff > 0)]
+predictions_dt[response > 0.1, mlr3measures::acc(truth_sign, response_sign), by = .(cv, task, learner, eps_diff > 0)]
+predictions_dt[response > 0.5, mlr3measures::acc(truth_sign, response_sign), by = .(cv, task, learner, eps_diff > 0)]
+predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = .(cv, task, learner, eps_diff > 0)]
 
 # hit ratio with positive surprise nincr
 predictions_dt[, mlr3measures::acc(truth_sign, response_sign),
@@ -159,21 +159,23 @@ predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign),
 # hit ratio for ensamble
 predictions_dt_ensemble = predictions_dt[, .(mean_response = mean(response),
                                              median_response = median(response),
+                                             # median_response = sd(response),
                                              truth = mean(truth)),
-                                         by = c("task_name", "symbol", "date")]
+                                         by = c("cv", "task", "symbol", "date")]
 predictions_dt_ensemble[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign_median = as.factor(sign(median_response)),
   response_sign_mean = as.factor(sign(mean_response))
 )]
-predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_median), by = c("task_name")]
-predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_mean), by = c("task_name")]
-predictions_dt_ensemble[median_response > 0.1, mlr3measures::acc(truth_sign, response_sign_median), by = c("task_name")]
-predictions_dt_ensemble[mean_response > 0.1, mlr3measures::acc(truth_sign, response_sign_mean), by = c("task_name")]
-predictions_dt_ensemble[median_response > 0.5, mlr3measures::acc(truth_sign, response_sign_median), by = c("task_name")]
-predictions_dt_ensemble[mean_response > 0.5, mlr3measures::acc(truth_sign, response_sign_mean), by = c("task_name")]
-predictions_dt_ensemble[median_response > 1, mlr3measures::acc(truth_sign, response_sign_median), by = c("task_name")]
-predictions_dt_ensemble[mean_response > 1, mlr3measures::acc(truth_sign, response_sign_mean), by = c("task_name")]
+ids_ = c("cv", "task")
+predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_median), by = c("cv", "task")]
+predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_mean), by = c("cv", "task")]
+predictions_dt_ensemble[median_response > 0.1, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
+predictions_dt_ensemble[mean_response > 0.1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
+predictions_dt_ensemble[median_response > 0.5, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
+predictions_dt_ensemble[mean_response > 0.5, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
+predictions_dt_ensemble[median_response > 1, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
+predictions_dt_ensemble[mean_response > 1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
 
 # save to azure for QC backtest
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
