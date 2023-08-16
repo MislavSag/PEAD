@@ -518,8 +518,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     learners = list(at_rf, at_xgboost, at_nnet, graph_lightgbm), # at_nnet, at_bart, at_lightgbm
     resamplings = customo_
   )
-  bmr = benchmark(design, store_models = TRUE)
-  system.time({bmr = benchmark(design, store_models = TRUE)})
+  bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
 
   # save locally and to list
   print("Save")
@@ -533,6 +532,7 @@ start_time = Sys.time()
 lapply(custom_cvs, function(cv_) {
 
   # debug
+  # i = 1
   # cv_ = custom_cvs[[1]]
 
   # get cv inner object
