@@ -9,6 +9,7 @@ library(mlr3misc)
 library(future)
 library(future.apply)
 
+
 # SETUP -------------------------------------------------------------------
 # create folder in which we will save results
 mlr3_save_path = paste0("./H4-jobarray-", Sys.getenv('PBS_ARRAY_ID'))
@@ -413,23 +414,23 @@ search_space_nnet$add(
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
 
-# lightgbm graph
-# [LightGBM] [Fatal] Do not support special JSON characters in feature name.
-# Error in makeModelMatrixFromDataFrame(x.test, if (!is.null(drop)) drop else TRUE) :
-#   when list, drop must have length equal to x
-# This happened PipeOp regr.bart's $predict()
-# Calls: lapply ... resolve.list -> signalConditionsASAP -> signalConditions
-# Execution halted
-graph_lightgbm = graph_template %>>%
-  po("learner", learner = lrn("regr.lightgbm"))
-graph_lightgbm = as_learner(graph_lightgbm)
-as.data.table(graph_lightgbm$param_set)[grep("sample", id), .(id, class, lower, upper, levels)]
-search_space_lightgbm = search_space_template$clone()
-search_space_lightgbm$add(
-  ps(regr.lightgbm.max_depth     = p_int(lower = 2, upper = 10),
-     regr.lightgbm.learning_rate = p_dbl(lower = 0.001, upper = 0.3),
-     regr.lightgbm.num_leaves    = p_int(lower = 10, upper = 100))
-)
+# # lightgbm graph
+# # [LightGBM] [Fatal] Do not support special JSON characters in feature name.
+# # Error in makeModelMatrixFromDataFrame(x.test, if (!is.null(drop)) drop else TRUE) :
+# #   when list, drop must have length equal to x
+# # This happened PipeOp regr.bart's $predict()
+# # Calls: lapply ... resolve.list -> signalConditionsASAP -> signalConditions
+# # Execution halted
+# graph_lightgbm = graph_template %>>%
+#   po("learner", learner = lrn("regr.lightgbm"))
+# graph_lightgbm = as_learner(graph_lightgbm)
+# as.data.table(graph_lightgbm$param_set)[grep("sample", id), .(id, class, lower, upper, levels)]
+# search_space_lightgbm = search_space_template$clone()
+# search_space_lightgbm$add(
+#   ps(regr.lightgbm.max_depth     = p_int(lower = 2, upper = 10),
+#      regr.lightgbm.learning_rate = p_dbl(lower = 0.001, upper = 0.3),
+#      regr.lightgbm.num_leaves    = p_int(lower = 10, upper = 100))
+# )
 
 # threads
 threads = as.integer(Sys.getenv("NCPUS"))
@@ -437,7 +438,7 @@ set_threads(graph_rf, n = threads)
 set_threads(graph_xgboost, n = threads)
 set_threads(graph_bart, n = threads)
 set_threads(graph_nnet, n = threads)
-set_threads(graph_lightgbm, n = threads)
+# set_threads(graph_lightgbm, n = threads)
 
 
 # NESTED CV BENCHMARK -----------------------------------------------------
@@ -515,7 +516,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_nnet, graph_lightgbm), # at_nnet, at_bart, at_lightgbm
+    learners = list(at_rf, at_xgboost, at_nnet), # at_nnet, at_bart, at_lightgbm
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
