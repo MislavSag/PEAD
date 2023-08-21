@@ -583,8 +583,8 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   # nested CV for one round
   print("Benchmark!")
   design = benchmark_grid(
-    tasks = list(task_ret_week), # list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_lightgbm), # list(at_rf, at_xgboost, at_lightgbm, at_nnet), # at_nnet, at_bart, at_lightgbm
+    tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
+    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet), # at_bart
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
