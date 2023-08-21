@@ -23,6 +23,25 @@ monnb <- function(d) {
   lt$year*12 + lt$mon }
 mondf <- function(d1, d2) { monnb(d2) - monnb(d1) }
 
+# snake to camel
+snakeToCamel <- function(snake_str) {
+  # Replace underscores with spaces
+  spaced_str <- gsub("_", " ", snake_str)
+
+  # Convert to title case using tools::toTitleCase
+  title_case_str <- tools::toTitleCase(spaced_str)
+
+  # Remove spaces and make the first character lowercase
+  camel_case_str <- gsub(" ", "", title_case_str)
+  camel_case_str <- sub("^.", tolower(substr(camel_case_str, 1, 1)), camel_case_str)
+
+  # I haeve added this to remove dot
+  camel_case_str <- gsub("\\.", "", camel_case_str)
+
+  return(camel_case_str)
+}
+
+
 # PREPARE DATA ------------------------------------------------------------
 print("Prepare data")
 
@@ -49,6 +68,22 @@ cols_non_features <- c("symbol", "date", "time", "right_time",
 targets <- c(colnames(DT)[grep("ret_excess", colnames(DT))])
 cols_features <- setdiff(colnames(DT), c(cols_non_features, targets))
 
+# change feature and targets columns names due to lighgbm
+cols_features_new = vapply(cols_features, snakeToCamel, FUN.VALUE = character(1L), USE.NAMES = FALSE)
+setnames(DT, cols_features, cols_features_new)
+cols_features = cols_features_new
+targets_new = vapply(targets, snakeToCamel, FUN.VALUE = character(1L), USE.NAMES = FALSE)
+setnames(DT, targets, targets_new)
+targets = targets_new
+
+
+cols_features_ <- gsub('[\\"/]', '', cols_features) # Remove double quotes, backslashes, and forward slashes
+cols_features_ <- gsub('[[:cntrl:]]', '', cols_features_) # Remove control characters
+cols_features_ <- gsub('^\\w\\-\\.', '', cols_features_) # Remove control characters
+
+all(cols_features_ == cols_features)
+all(trimws(cols_features_) == cols_features)
+
 # convert columns to numeric. This is important only if we import existing features
 chr_to_num_cols <- setdiff(colnames(DT[, .SD, .SDcols = is.character]), c("symbol", "time", "right_time"))
 print(chr_to_num_cols)
@@ -71,7 +106,7 @@ DT = DT[, (names(factor_cols)) := lapply(.SD, as.factor), .SD = names(factor_col
 # remove observations with missing target
 # if we want to keep as much data as possible an use only one predicitn horizont
 # we can skeep this step
-DT = na.omit(DT, cols = setdiff(targets, colnames(DT)[grep("extreme", colnames(DT))]))
+DT = na.omit(DT, cols = setdiff(targets, colnames(DT)[grep("xtreme", colnames(DT))]))
 
 # change IDate to date, because of error
 # Assertion on 'feature types' failed: Must be a subset of
@@ -100,31 +135,31 @@ id_cols = c("symbol", "date", "yearmonthid")
 DT[, date := as.POSIXct(date, tz = "UTC")]
 
 # task with future week returns as target
-target_ = colnames(DT)[grep("^ret_excess_stand_5", colnames(DT))]
+target_ = colnames(DT)[grep("^ret.*xcess.*tand.*5", colnames(DT))]
 cols_ = c(id_cols, target_, cols_features)
 task_ret_week <- as_task_regr(DT[, ..cols_],
-                              id = "task_ret_week",
+                              id = "taskRetWeek",
                               target = target_)
 
 # task with future month returns as target
-target_ = colnames(DT)[grep("^ret_excess_stand_22", colnames(DT))]
+target_ = colnames(DT)[grep("^ret.*xcess.*tand.*22", colnames(DT))]
 cols_ = c(id_cols, target_, cols_features)
 task_ret_month <- as_task_regr(DT[, ..cols_],
-                               id = "task_ret_month",
+                               id = "taskRetMonth",
                                target = target_)
 
 # task with future 2 months returns as target
-target_ = colnames(DT)[grep("^ret_excess_stand_44", colnames(DT))]
+target_ = colnames(DT)[grep("^ret.*xcess.*tand.*44", colnames(DT))]
 cols_ = c(id_cols, target_, cols_features)
 task_ret_month2 <- as_task_regr(DT[, ..cols_],
-                                id = "task_ret_month2",
+                                id = "taskRetMonth2",
                                 target = target_)
 
 # task with future 2 months returns as target
-target_ = colnames(DT)[grep("^ret_excess_stand_66", colnames(DT))]
+target_ = colnames(DT)[grep("^ret.*xcess.*tand.*66", colnames(DT))]
 cols_ = c(id_cols, target_, cols_features)
 task_ret_quarter <- as_task_regr(DT[, ..cols_],
-                                 id = "task_ret_quarter",
+                                 id = "taskRetQuarter",
                                  target = target_)
 
 # set roles for symbol, date and yearmonth_id
@@ -143,8 +178,8 @@ print("Cross validations")
 
 # create train, tune and test set
 nested_cv_split = function(task,
-                           train_length = 60,
-                           tune_length = 6,
+                           train_length = 12,
+                           tune_length = 1,
                            test_length = 1) {
 
   # create cusom CV's for inner and outer sampling
@@ -416,11 +451,44 @@ search_space_nnet$add(
 
 # lightgbm graph
 # [LightGBM] [Fatal] Do not support special JSON characters in feature name.
-# Error in makeModelMatrixFromDataFrame(x.test, if (!is.null(drop)) drop else TRUE) :
-#   when list, drop must have length equal to x
-# This happened PipeOp regr.bart's $predict()
-# Calls: lapply ... resolve.list -> signalConditionsASAP -> signalConditions
-# Execution halted
+graph_template =
+  po("subsample") %>>% # uncomment this for hyperparameter tuning
+  po("dropnacol", id = "dropnacol", cutoff = 0.05) %>>%
+  po("dropna", id = "dropna") %>>%
+  po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
+  po("fixfactors", id = "fixfactors") %>>%
+  # po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
+  po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
+  po("uniformization") %>>%
+  po("dropna", id = "dropna_v2") %>>%
+  # filters
+  po("branch", options = c("jmi", "gausscov"), id = "filter_branch") %>>%
+  gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
+              po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0))) %>>%
+  # po("nop", id = "nop_filter"))) %>>%
+  po("unbranch", id = "filter_unbranch")
+search_space_template = ps(
+  # subsample for hyperband
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  # preprocessing
+  dropcorr.cutoff = p_fct(
+    levels = c("0.80", "0.90", "0.95", "0.99"),
+    trafo = function(x, param_set) {
+      switch(x,
+             "0.80" = 0.80,
+             "0.90" = 0.90,
+             "0.95" = 0.95,
+             "0.99" = 0.99)
+    }
+  ),
+  # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
+  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # filters
+  filter_branch.selection = p_fct(levels = c("jmi", "gausscov"))
+)
 graph_lightgbm = graph_template %>>%
   po("learner", learner = lrn("regr.lightgbm"))
 graph_lightgbm = as_learner(graph_lightgbm)
@@ -438,7 +506,7 @@ set_threads(graph_rf, n = threads)
 set_threads(graph_xgboost, n = threads)
 set_threads(graph_bart, n = threads)
 set_threads(graph_nnet, n = threads)
-# set_threads(graph_lightgbm, n = threads)
+set_threads(graph_lightgbm, n = threads)
 
 
 # NESTED CV BENCHMARK -----------------------------------------------------
@@ -515,8 +583,8 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   # nested CV for one round
   print("Benchmark!")
   design = benchmark_grid(
-    tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_nnet), # at_nnet, at_bart, at_lightgbm
+    tasks = list(task_ret_week), # list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
+    learners = list(at_lightgbm), # list(at_rf, at_xgboost, at_lightgbm, at_nnet), # at_nnet, at_bart, at_lightgbm
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
