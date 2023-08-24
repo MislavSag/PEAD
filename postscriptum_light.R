@@ -1,13 +1,135 @@
 library(data.table)
+library(mlr3verse)
+library(AzureStor)
 
 
 
 
+# SETUP -------------------------------------------------------------------
+# creds
+blob_key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJLu1wVE6HT+ASt0DdAPQ=="
+endpoint = "https://snpmarketdata.blob.core.windows.net/"
+BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
+
+
+# BACKEND -----------------------------------------------------------------
+# utils
+monnb <- function(d) {
+  lt <- as.POSIXlt(as.Date(d, origin="1900-01-01"))
+  lt$year*12 + lt$mon }
+mondf <- function(d1, d2) { monnb(d2) - monnb(d1) }
+snakeToCamel <- function(snake_str) {
+  # Replace underscores with spaces
+  spaced_str <- gsub("_", " ", snake_str)
+
+  # Convert to title case using tools::toTitleCase
+  title_case_str <- tools::toTitleCase(spaced_str)
+
+  # Remove spaces and make the first character lowercase
+  camel_case_str <- gsub(" ", "", title_case_str)
+  camel_case_str <- sub("^.", tolower(substr(camel_case_str, 1, 1)), camel_case_str)
+
+  # I haeve added this to remove dot
+  camel_case_str <- gsub("\\.", "", camel_case_str)
+
+  return(camel_case_str)
+}
+
+# define backends
+data_tbl = fread("./pead-predictors.csv")
+DT = as.data.table(data_tbl)
+DT[, date_rolling := as.IDate(date_rolling)]
+DT[, yearmonthid := round(date_rolling, digits = "month")]
+DT[, .(date, date_rolling, yearmonthid)]
+DT[, yearmonthid := as.integer(yearmonthid)]
+DT[, .(date, date_rolling, yearmonthid)]
+cols_non_features <- c("symbol", "date", "time", "right_time",
+                       "bmo_return", "amc_return",
+                       "open", "high", "low", "close", "volume", "returns",
+                       "yearmonthid", "date_rolling"
+)
+targets <- c(colnames(DT)[grep("ret_excess", colnames(DT))])
+cols_features <- setdiff(colnames(DT), c(cols_non_features, targets))
+cols_features_new = vapply(cols_features, snakeToCamel, FUN.VALUE = character(1L), USE.NAMES = FALSE)
+setnames(DT, cols_features, cols_features_new)
+cols_features = cols_features_new
+targets_new = vapply(targets, snakeToCamel, FUN.VALUE = character(1L), USE.NAMES = FALSE)
+setnames(DT, targets, targets_new)
+targets = targets_new
+cols_features_ <- gsub('[\\"/]', '', cols_features) # Remove double quotes, backslashes, and forward slashes
+cols_features_ <- gsub('[[:cntrl:]]', '', cols_features_) # Remove control characters
+cols_features_ <- gsub('^\\w\\-\\.', '', cols_features_) # Remove control characters
+chr_to_num_cols <- setdiff(colnames(DT[, .SD, .SDcols = is.character]), c("symbol", "time", "right_time"))
+print(chr_to_num_cols)
+DT <- DT[, (chr_to_num_cols) := lapply(.SD, as.numeric), .SDcols = chr_to_num_cols]
+features_ <- DT[, ..cols_features]
+remove_cols <- colnames(features_)[apply(features_, 2, var, na.rm=TRUE) == 0]
+print(paste0("Removing feature with 0 standard deviation: ", remove_cols))
+cols_features <- setdiff(cols_features, remove_cols)
+int_numbers = na.omit(DT[, ..cols_features])[, lapply(.SD, function(x) all(floor(x) == x))]
+int_cols = colnames(DT[, ..cols_features])[as.matrix(int_numbers)[1,]]
+factor_cols = DT[, ..int_cols][, lapply(.SD, function(x) length(unique(x)))]
+factor_cols = as.matrix(factor_cols)[1, ]
+factor_cols = factor_cols[factor_cols <= 100]
+DT = DT[, (names(factor_cols)) := lapply(.SD, as.factor), .SD = names(factor_cols)]
+DT = na.omit(DT, cols = setdiff(targets, colnames(DT)[grep("xtreme", colnames(DT))]))
+DT[, date := as.POSIXct(date, tz = "UTC")]
+DT = DT[order(yearmonthid)]
+
+# tasks
+id_cols = c("symbol", "date", "yearmonthid")
+DT[, date := as.POSIXct(date, tz = "UTC")]
+target_ = colnames(DT)[grep("^ret.*xcess.*tand.*5", colnames(DT))]
+cols_ = c(id_cols, target_, cols_features)
+task_ret_week <- as_task_regr(DT[, ..cols_],
+                              id = "taskRetWeek",
+                              target = target_)
+target_ = colnames(DT)[grep("^ret.*xcess.*tand.*22", colnames(DT))]
+cols_ = c(id_cols, target_, cols_features)
+task_ret_month <- as_task_regr(DT[, ..cols_],
+                               id = "taskRetMonth",
+                               target = target_)
+target_ = colnames(DT)[grep("^ret.*xcess.*tand.*44", colnames(DT))]
+cols_ = c(id_cols, target_, cols_features)
+task_ret_month2 <- as_task_regr(DT[, ..cols_],
+                                id = "taskRetMonth2",
+                                target = target_)
+target_ = colnames(DT)[grep("^ret.*xcess.*tand.*66", colnames(DT))]
+cols_ = c(id_cols, target_, cols_features)
+task_ret_quarter <- as_task_regr(DT[, ..cols_],
+                                 id = "taskRetQuarter",
+                                 target = target_)
+task_ret_week$col_roles$feature = setdiff(task_ret_week$col_roles$feature,
+                                          id_cols)
+task_ret_month$col_roles$feature = setdiff(task_ret_month$col_roles$feature,
+                                           id_cols)
+task_ret_month2$col_roles$feature = setdiff(task_ret_month2$col_roles$feature,
+                                            id_cols)
+task_ret_quarter$col_roles$feature = setdiff(task_ret_quarter$col_roles$feature,
+                                             id_cols)
+
+# backends
+ids_ = c("symbol", "date", "yearmonthid", "..row_id", "epsDiff", "nincr", "nincr2y", "nincr3y")
+taskRetWeek    = task_ret_week$backend$data(rows = task_ret_week$backend$rownames, cols = ids_)
+taskRetMonth   = task_ret_month$backend$data(rows = task_ret_month$backend$rownames, cols = ids_)
+taskRetMonth2  = task_ret_month2$backend$data(rows = task_ret_month2$backend$rownames, cols = ids_)
+taskRetQuarter = task_ret_quarter$backend$data(rows = task_ret_quarter$backend$rownames, cols = ids_)
+test = all(c(identical(taskRetWeek, taskRetMonth), identical(taskRetWeek, taskRetMonth2), identical(taskRetWeek, taskRetQuarter)))
+print(test)
+if (test) {
+  backend = copy(taskRetWeek)
+  setnames(backend, "..row_id", "row_ids")
+  rm(list = c("taskRetWeek", "taskRetMonth", "taskRetMonth2", "taskRetQuarter"))
+}
+rm(list = c("task_ret_week", "task_ret_month", "task_ret_month2", "task_ret_quarter"))
+
+
+# RESULTS -----------------------------------------------------------------
 # utils
 id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 
 # set files with benchmarks
-bmr_files = list.files(list.files("F:", pattern = "^H4", full.names = TRUE), full.names = TRUE)
+bmr_files = list.files(list.files("F:", pattern = "^H4_v2", full.names = TRUE), full.names = TRUE)
 
 # arrange files
 cv_ = as.integer(gsub("\\d+-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
@@ -28,18 +150,6 @@ for (i in 1:nrow(bmr_files)) {
   bmr = readRDS(bmr_files$bmr_files[i])
   bmr_dt = as.data.table(bmr)
 
-  # get backends
-  task_names = unlist(lapply(bmr_dt$task, function(x) x$id))
-  learner_names = unlist(lapply(bmr_dt$learner, function(x) gsub(".*removeconstants_3.regr.|.tuned", "", x$id)))
-  # backs = lapply(bmr_dt$task, function(task) {
-  #   x = task$backend$data(cols = c(id_cols, "eps_diff", "nincr", "nincr_2y", "nincr_3y"),
-  #                     rows = 1:bmr_dt$task[[1]]$nrow)
-  # })
-  # backs = lapply(seq_along(backs), function(i) cbind(task = task_names[[i]],
-  #                                                    learner = learner_names[[i]],
-  #                                                    backs[[i]]))
-  # lapply(backs, setnames, "..row_id", "row_ids")
-
   # get predictions
   predictions = lapply(bmr_dt$prediction, function(x) as.data.table(x))
   predictions = lapply(seq_along(predictions), function(j)
@@ -48,29 +158,17 @@ for (i in 1:nrow(bmr_files)) {
           predictions[[j]]))
 
   # merge backs and predictions
-  # predictions <- lapply(seq_along(predictions), function(j) {
-  #   y = backs[[j]][predictions[[j]], on = c("task", "learner", "row_ids")]
-  #   y[, date := as.Date(date, origin = "1970-01-01")]
-  #   y
-  # })
+  predictions <- lapply(seq_along(predictions), function(j) {
+    y = backend[predictions[[j]], on = c("row_ids")]
+    y[, date := as.Date(date, origin = "1970-01-01")]
+    y
+  })
   predictions = rbindlist(predictions)
 
   # add meta
   predictions = cbind(cv = bmr_files$cv[i],
                       i = bmr_files$i[i],
                       predictions)
-
-  # # best params
-  # best_params = lapply(bmr_dt$learner, function(x) x$tuning_instance$result_x_domain)
-  # archives = lapply(bmr_dt$learner, function(x) x$tuning_instance$archive)
-  #
-  # most important variables
-  # imp_features_gausscov_l[[i]] = bmr_dt$learner[[1]]$state$model$learner$state$model$gausscov_f1st$features
-  # imp_features_corr_l[[i]] = bmr_dt$learner[[1]]$state$model$learner$state$model$correlation$features
-
-  # best models
-  # bmr_dt$learner[[1]]$tuning_instance$archive
-  # bmr_dt$learner[[1]]$state$model$learner$state$model$
 
   # predictions
   predictions_l[[i]] = predictions
@@ -98,18 +196,26 @@ predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = 
 predictions_dt_ensemble = predictions_dt[, .(mean_response = mean(response),
                                              median_response = median(response),
                                              sign_response = sum(sign(response)),
-                                             truth = mean(truth)),
-                                         by = c("cv", "task", "row_ids")]
+                                             truth = mean(truth),
+                                             symbol = symbol,
+                                             date = date,
+                                             yearmonthid = yearmonthid,
+                                             epsDiff = epsDiff),
+                                         by = c("task", "row_ids")]
 predictions_dt_ensemble[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign_median = as.factor(sign(median_response)),
   response_sign_mean = as.factor(sign(mean_response)),
-  response_sign_sign = sign_response == -3 # better short than long
+  response_sign_sign_pos = sign_response > 9,
+  response_sign_sign_neg = sign_response < -9
 )]
 ids_ = c("task")
 predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
 predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
-predictions_dt_ensemble[response_sign_sign == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign), levels = c(-1, 1))), by = ids_]
+
+predictions_dt_ensemble[response_sign_sign_pos == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+predictions_dt_ensemble[response_sign_sign_neg == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
+
 predictions_dt_ensemble[median_response > 0.1, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
 predictions_dt_ensemble[mean_response > 0.1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
 predictions_dt_ensemble[median_response > 0.5, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
@@ -117,18 +223,30 @@ predictions_dt_ensemble[mean_response > 0.5, mlr3measures::acc(truth_sign, respo
 predictions_dt_ensemble[median_response > 1, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
 predictions_dt_ensemble[mean_response > 1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
 
+# best
+predictions_dt_ensemble[response_sign_sign_pos == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+
+predictions_dt_ensemble[response_sign_sign_neg == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
+predictions_dt_ensemble[response_sign_sign_neg == TRUE & epsDiff < 0][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
+
 # save to azure for QC backtest
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
-lapply(unique(predictions_dt$task_name), function(x) {
+predictions_best = predictions_dt_ensemble[response_sign_sign_pos == TRUE]
+lapply(unique(predictions_best$task), function(x) {
+  # debug
+  # x = "taskRetQuarter"
+
   # prepare data
-  y = predictions_dt[task_name == x]
-  y = y[, .(symbol, date, response, eps_diff)]
+  y = predictions_best[task == x]
+  y = y[, .(symbol, date, response = response_sign_mean, epsDiff)]
+  y = unique(y)
   y = y[, .(
     symbol = paste0(symbol, collapse = "|"),
     response = paste0(response, collapse = "|"),
-    epsdiff = paste0(eps_diff, collapse = "|")
+    epsdiff = paste0(epsDiff, collapse = "|")
   ), by = date]
   y[, date := as.character(date)]
+  setorder(y, date)
 
   # save to azure blob
   print(y)
@@ -137,201 +255,3 @@ lapply(unique(predictions_dt$task_name), function(x) {
   # universe = y[, .(date, symbol)]
   # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
 })
-
-
-
-
-# OLD ---------------------------------------------------------------------
-# # linex measure
-# source("Linex.R")
-# mlr_measures$add("linex", Linex)
-#
-# # setup
-# blob_key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJLu1wVE6HT+ASt0DdAPQ=="
-# endpoint = "https://snpmarketdata.blob.core.windows.net/"
-# BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
-# mlr3_save_path = "D:/mlfin/cvresults-pead"
-#
-# # read predictors
-# DT <- fread("D:/features/pead-predictors.csv")
-#
-# # create group variable
-# DT[, monthid := paste0(data.table::year(as.Date(date, origin = "1970-01-01")),
-#                        data.table::month(as.Date(date, origin = "1970-01-01")))]
-# DT[, monthid := as.integer(monthid)]
-# setorder(DT, monthid)
-#
-# # define predictors
-# cols_non_features <- c("symbol", "date", "time", "right_time",
-#                        "bmo_return", "amc_return",
-#                        "open", "high", "low", "close", "volume", "returns",
-#                        "monthid"
-# )
-# targets <- c(colnames(DT)[grep("ret_excess", colnames(DT))])
-# cols_features <- setdiff(colnames(DT), c(cols_non_features, targets))
-#
-# # convert columns to numeric. This is important only if we import existing features
-# chr_to_num_cols <- setdiff(colnames(DT[, .SD, .SDcols = is.character]), c("symbol", "time", "right_time"))
-# print(chr_to_num_cols)
-# DT <- DT[, (chr_to_num_cols) := lapply(.SD, as.numeric), .SDcols = chr_to_num_cols]
-#
-# # remove constant columns in set and remove same columns in test set
-# features_ <- DT[, ..cols_features]
-# remove_cols <- colnames(features_)[apply(features_, 2, var, na.rm=TRUE) == 0]
-# print(paste0("Removing feature with 0 standard deviation: ", remove_cols))
-# cols_features <- setdiff(cols_features, remove_cols)
-#
-# # convert variables with low number of unique values to factors
-# int_numbers = DT[, ..cols_features][, lapply(.SD, function(x) all(as.integer(x)==x) & x > 0.99)]
-# int_cols = na.omit(colnames(DT[, ..cols_features])[as.matrix(int_numbers)[1,]])
-# factor_cols = DT[, ..int_cols][, lapply(.SD, function(x) length(unique(x)))]
-# factor_cols = as.matrix(factor_cols)[1, ]
-# factor_cols = factor_cols[factor_cols <= 100]
-# DT = DT[, (names(factor_cols)) := lapply(.SD, as.factor), .SD = names(factor_cols)]
-#
-# # remove observations with missing target
-# DT = na.omit(DT, cols = setdiff(targets, colnames(DT)[grep("extreme", colnames(DT))]))
-#
-# # sort
-# setorder(DT, date)
-#
-# # add rowid column
-# DT[, row_ids := 1:.N]
-#
-# ### REGRESSION
-# # task with future week returns as target
-# target_ = colnames(DT)[grep("^ret_excess_stand_5", colnames(DT))]
-# cols_ = c(target_, "symbol", "monthid", cols_features)
-# task_ret_week <- as_task_regr(DT[, ..cols_],
-#                               id = "task_ret_week",
-#                               target = target_)
-#
-# # outer custom rolling window resampling
-# outer_split <- function(task, train_length = 36, test_length = 2, test_length_out = 1) {
-#   customo = rsmp("custom")
-#   task_ <- task$clone()
-#   groups = cbind(id = 1:task_$nrow, task_$data(cols = "monthid"))
-#   groups_v = groups[, unique(monthid)]
-#   rm(task_)
-#   insample_length = train_length + test_length
-#   train_groups_out <- lapply(1:(length(groups_v)-train_length-test_length), function(x) groups_v[x:(x+insample_length)])
-#   test_groups_out <- lapply(1:(length(groups_v)-train_length-test_length),
-#                             function(x) groups_v[(x+insample_length):(x+insample_length+test_length_out-1)])
-#   train_sets_out <- lapply(train_groups_out, function(mid) groups[monthid %in% mid, id])
-#   test_sets_out <- lapply(test_groups_out, function(mid) groups[monthid %in% mid, id])
-#   customo$instantiate(task, train_sets_out, test_sets_out)
-# }
-# customo = outer_split(task_ret_week)
-#
-# # download objects from azure
-# cont = storage_container(BLOBENDPOINT, "peadcv")
-# azure_files = unlist(list_storage_files(cont)["name"], use.names = FALSE)
-# for (azf in azure_files) {
-#   # azf = azure_files[1]
-#   if (azf %in% list.files(mlr3_save_path)) {
-#     print(azf)
-#     next
-#   }
-#   storage_download(cont,
-#                    src = azf,
-#                    dest = file.path(mlr3_save_path, azf))
-# }
-#
-# # get predictions function
-# res_files = file.info(list.files(mlr3_save_path, full.names = TRUE))
-# res_files = res_files[order(res_files$ctime), ]
-# bmr_files = rownames(res_files[2:nrow(res_files),])
-# get_predictions_by_task = function(bmr_file, DT) {
-#   # bmr_file = bmr_files[39]
-#   print(bmr_file)
-#   bmr = readRDS(bmr_file)
-#   bmr_dt = as.data.table(bmr)
-#   task_names = lapply(bmr_dt$task, function(x) x$id)
-#   # task_names = lapply(bmr_dt$task, function(x) x$id)
-#   predictions = lapply(bmr_dt$prediction, function(x) as.data.table(x))
-#   names(predictions) <- task_names
-#   predictions <- lapply(predictions, function(x) {
-#     x = DT[, .(row_ids, symbol, date)][x, on = "row_ids"]
-#     x[, date := as.Date(date, origin = "1970-01-01")]
-#   })
-#   return(predictions)
-# }
-# predictions = lapply(bmr_files, get_predictions_by_task, DT = DT)
-#
-# # choose task
-# task_name = "task_ret_week"
-# predictions_task = lapply(predictions, function(x) {
-#   x[[task_name]]
-# })
-# predictions_task <- rbindlist(predictions_task)
-#
-# # save to azure for QC backtest
-# predictions_qc <- predictions_task[, .(symbol, date, response)]
-# predictions_qc = predictions_qc[, .(symbol = paste0(symbol, collapse = "|"),
-#                                     response = paste0(response, collapse = "|")), by = date]
-# predictions_qc[, date := as.character(date)]
-# cont = storage_container(BLOBENDPOINT, "qc-backtest")
-# storage_write_csv(predictions_qc, cont, "pead_task_ret_week.csv")
-# universe = predictions_qc[, .(date, symbol)]
-# storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
-#
-# # performance by varioues measures
-# bmr_$aggregate(msrs(c("regr.mse", "linex", "regr.mae")))
-# predicitons = as.data.table(as.data.table(bmr_)[, "prediction"][1][[1]][[1]])
-#
-# # prrformance by hit ratio
-# predicitons[, `:=`(
-#   truth_sign = as.factor(sign(truth)),
-#   response_sign = as.factor(sign(response))
-# )]
-# mlr3measures::acc(predicitons$truth_sign, predicitons$response_sign)
-#
-# # hiy ratio for high predicted returns
-# predicitons_sample = predicitons[response > 0.1]
-# mlr3measures::acc(predicitons_sample$truth_sign, predicitons_sample$response_sign)
-#
-# # cumulative returns for same sample
-# predicitons_sample[, .(
-#   benchmark = mean(predicitons$truth),
-#   strategy  = mean(truth)
-# )]
-#
-# # important predictors
-# bmr_ = bmrs[[18]]
-# lapply(1:2, function(i) {
-#   resample_res = as.data.table(bmr_$resample_result(i))
-#   resample_res$learner[[1]]$state$model$learner$state$model$gausscov_f1st$features
-# })
-#
-# # performance for every learner
-# resample_res$learner[[1]]$state$model$learner$state$model$ranger.ranger$model$predictions
-# as.data.table(bmr_)
-
-
-
-
-# ADD PIPELINES -----------------------------------------------------------
-# # source pipes, filters and other
-# source("mlr3_winsorization.R")
-# source("mlr3_uniformization.R")
-# source("mlr3_gausscov_f1st.R")
-# source("mlr3_dropna.R")
-# source("mlr3_dropnacol.R")
-# source("mlr3_filter_drop_corr.R")
-# source("mlr3_winsorizationsimple.R")
-# source("PipeOpPCAExplained.R")
-# # measures
-# source("Linex.R")
-# source("PortfolioRet.R")
-#
-# # add my pipes to mlr dictionary
-# mlr_pipeops$add("uniformization", PipeOpUniform)
-# mlr_pipeops$add("winsorize", PipeOpWinsorize)
-# mlr_pipeops$add("winsorizesimple", PipeOpWinsorizeSimple)
-# mlr_pipeops$add("dropna", PipeOpDropNA)
-# mlr_pipeops$add("dropnacol", PipeOpDropNACol)
-# mlr_pipeops$add("dropcorr", PipeOpDropCorr)
-# mlr_pipeops$add("pca_explained", PipeOpPCAExplained)
-# mlr_filters$add("gausscov_f1st", FilterGausscovF1st)
-# mlr_measures$add("linex", Linex)
-# mlr_measures$add("portfolio_ret", PortfolioRet)

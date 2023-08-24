@@ -15,6 +15,7 @@ library(rpart.plot)
 library(DescTools)
 library(reticulate)
 library(findata)
+library(AzureStor)
 # Python environment and python modules
 # Instructions: some functions use python modules. Steps to use python include:
 # 1. create new conda environment:
@@ -26,13 +27,13 @@ library(findata)
 #    tsfresh
 #    TSFEL
 # python packages
-reticulate::use_python("C:/ProgramData/Anaconda3/envs/mlfinlabenv/python.exe", required = TRUE)
-mlfinlab = reticulate::import("mlfinlab", convert = FALSE)
-pd = reticulate::import("pandas", convert = FALSE)
+reticulate::use_python("C:/Users/Mislav/.conda/envs/mlfinlabenv/python.exe", required = TRUE)
+# # mlfinlab = reticulate::import("mlfinlab", convert = FALSE)
+# pd = reticulate::import("pandas", convert = FALSE)
 builtins = import_builtins(convert = FALSE)
 main = import_main(convert = FALSE)
 tsfel = reticulate::import("tsfel", convert = FALSE)
-tsfresh = reticulate::import("tsfresh", convert = FALSE)
+# # tsfresh = reticulate::import("tsfresh", convert = FALSE)
 warnigns = reticulate::import("warnings", convert = FALSE)
 warnigns$filterwarnings('ignore')
 
@@ -152,7 +153,6 @@ if (events_data == "intersection") {
 events <- unique(events, by = c("symbol", "date"))
 
 
-
 # MARKET DATA AND FUNDAMENTALS ---------------------------------------------
 # import market data and fundamentals
 factors = Factors$new()
@@ -176,7 +176,6 @@ prices_dt <- prices_dt[symbol %in% prices_n$symbol]
 
 # save SPY for later and keep only events symbols
 spy <- prices_dt[symbol == "SPY", .(symbol, date, open, high, low, close, volume, returns)]
-
 
 
 # REGRESSION LABELING ----------------------------------------------------------
@@ -326,9 +325,12 @@ RollingWaveletArimaFeatures = fread(get_latest("RollingWaveletArimaFeatures"))
 
 # util function for identifying missing dates and create at_ object
 get_at_ = function(predictors) {
+  # debug
+  # predictors = copy(RollingBidAskFeatures)
+
   new_dataset = fsetdiff(dataset[, .(symbol, date = as.IDate(date))],
                          predictors[, .(symbol, date)])
-  # new_dataset = new_dataset[date > as.Date("2022-01-01")]
+  # new_dataset = new_dataset[date > as.Date("2021-01-01")]
   new_data <- merge(OhlcvInstance$X,
                     dataset[new_dataset[, .(symbol, date)]],
                     by = c("symbol", "date"), all.x = TRUE, all.y = FALSE)
@@ -339,35 +341,39 @@ get_at_ = function(predictors) {
 # BidAsk features
 print("Calculate BidAsk features.")
 at_ = get_at_(RollingBidAskFeatures)
-RollingBidAskInstance <- RollingBidAsk$new(windows = c(5, 22, 22 * 6),
-                                           workers = 4L,
-                                           at = at_,
-                                           lag = lag_,
-                                           methods = c("EDGE", "Roll", "OHLC", "OHL.CHL"))
-RollingBidAskFeatures_new = RollingBidAskInstance$get_rolling_features(OhlcvInstance)
-gc()
+if (length(at_) > 0) {
+  RollingBidAskInstance <- RollingBidAsk$new(windows = c(5, 22, 22 * 6),
+                                             workers = 4L,
+                                             at = at_,
+                                             lag = lag_,
+                                             methods = c("EDGE", "Roll", "OHLC", "OHL.CHL"))
+  RollingBidAskFeatures_new = RollingBidAskInstance$get_rolling_features(OhlcvInstance)
+  gc()
 
-# merge and save
-RollingBidAskFeatures_new[, date := as.IDate(date)]
-RollingBidAskFeatures_new_merged = rbind(RollingBidAskFeatures, RollingBidAskFeatures_new)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingBidAskFeatures_new_merged, paste0("D:/features/PEAD-RollingBidAskFeatures-", time_, ".csv"))
+  # merge and save
+  RollingBidAskFeatures_new[, date := as.IDate(date)]
+  RollingBidAskFeatures_new_merged = rbind(RollingBidAskFeatures, RollingBidAskFeatures_new)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingBidAskFeatures_new_merged, paste0("D:/features/PEAD-RollingBidAskFeatures-", time_, ".csv"))
+}
 
 # BackCUSUM features
 print("Calculate BackCUSUM features.")
 at_ = get_at_(RollingBackCusumFeatures)
-RollingBackcusumInit = RollingBackcusum$new(windows = c(22 * 3, 22 * 6), workers = 4L,
-                                            at = at_, lag = lag_,
-                                            alternative = c("greater", "two.sided"),
-                                            return_power = c(1, 2))
-RollingBackCusumFeatures_new = RollingBackcusumInit$get_rolling_features(OhlcvInstance)
-gc()
+if (length(at_) > 0) {
+  RollingBackcusumInit = RollingBackcusum$new(windows = c(22 * 3, 22 * 6), workers = 4L,
+                                              at = at_, lag = lag_,
+                                              alternative = c("greater", "two.sided"),
+                                              return_power = c(1, 2))
+  RollingBackCusumFeatures_new = RollingBackcusumInit$get_rolling_features(OhlcvInstance)
+  gc()
 
-# merge and save
-RollingBackCusumFeatures_new[, date := as.IDate(date)]
-RollingBackCusumFeatures_new_merged = rbind(RollingBackCusumFeatures, RollingBackCusumFeatures_new)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingBackCusumFeatures_new_merged, paste0("D:/features/PEAD-RollingBackCusumFeatures-", time_, ".csv"))
+  # merge and save
+  RollingBackCusumFeatures_new[, date := as.IDate(date)]
+  RollingBackCusumFeatures_new_merged = rbind(RollingBackCusumFeatures, RollingBackCusumFeatures_new)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingBackCusumFeatures_new_merged, paste0("D:/features/PEAD-RollingBackCusumFeatures-", time_, ".csv"))
+}
 
 # Exuber features
 print("Calculate Exuber features.")
@@ -476,15 +482,17 @@ fwrite(RollingTsfeaturesFeaturesNewMerged, paste0("D:/features/PEAD-RollingTsfea
 # theft tsfel features, Must be alone, because number of workers have to be 1L
 print("Calculate tsfel features.")
 at_ = get_at_(RollingTheftTsfelFeatures)
-RollingTheftInit = RollingTheft$new(windows = c(22 * 3, 22 * 12), workers = 1L,
-                                    at = at_, lag = lag_,  features_set = "TSFEL")
-RollingTheftTsfelFeaturesNew = suppressMessages(RollingTheftInit$get_rolling_features(OhlcvInstance))
+if (length(at_) > 0) {
+  RollingTheftInit = RollingTheft$new(windows = c(22 * 3, 22 * 12), workers = 1L,
+                                      at = at_, lag = lag_,  features_set = "TSFEL")
+  RollingTheftTsfelFeaturesNew = suppressMessages(RollingTheftInit$get_rolling_features(OhlcvInstance))
 
-# save
-RollingTheftTsfelFeaturesNew[, date := as.IDate(date)]
-RollingTheftTsfelFeaturesNewMerged = rbind(RollingTheftTsfelFeatures, RollingTheftTsfelFeaturesNew, fill = TRUE)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingTheftTsfelFeaturesNewMerged, paste0("D:/features/PEAD-RollingTheftTsfelFeatures-", time_, ".csv"))
+  # save
+  RollingTheftTsfelFeaturesNew[, date := as.IDate(date)]
+  RollingTheftTsfelFeaturesNewMerged = rbind(RollingTheftTsfelFeatures, RollingTheftTsfelFeaturesNew, fill = TRUE)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingTheftTsfelFeaturesNewMerged, paste0("D:/features/PEAD-RollingTheftTsfelFeatures-", time_, ".csv"))
+}
 
 # # quarks
 # at_ = get_at_(RollingQuarksFeatures)
@@ -515,16 +523,18 @@ fwrite(RollingTheftTsfelFeaturesNewMerged, paste0("D:/features/PEAD-RollingTheft
 
 # Wavelet arima
 at_ = get_at_(RollingWaveletArimaFeatures)
-RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6L,
-                                                      lag = lag_, at = at_, filter = "haar")
-RollingWaveletArimaFeaturesNew = RollingWaveletArimaInstance$get_rolling_features(OhlcvInstance)
-gc()
+if (length(at_) > 0) {
+  RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6L,
+                                                        lag = lag_, at = at_, filter = "haar")
+  RollingWaveletArimaFeaturesNew = RollingWaveletArimaInstance$get_rolling_features(OhlcvInstance)
+  gc()
 
-# save
-RollingWaveletArimaFeaturesNew[, date := as.IDate(date)]
-RollingWaveletArimaFeaturesNewMerged = rbind(RollingWaveletArimaFeatures, RollingWaveletArimaFeaturesNew)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingWaveletArimaFeaturesNewMerged, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
+  # save
+  RollingWaveletArimaFeaturesNew[, date := as.IDate(date)]
+  RollingWaveletArimaFeaturesNewMerged = rbind(RollingWaveletArimaFeatures, RollingWaveletArimaFeaturesNew)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingWaveletArimaFeaturesNewMerged, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
+}
 
 # prepare arguments for features
 prices_events <- merge(prices_dt, dataset[, .(symbol, date, eps)],
@@ -775,20 +785,10 @@ print(paste0("Removing ", n_0 - n_1, " rows because of Inf values"))
 time_ <- strftime(Sys.time(), "%Y%m%d%H%M%S")
 file_mame <- paste0("D:/features/pead-predictors-", time_, ".csv")
 fwrite(clf_data, file_mame)
-config <- tiledb_config()
-config["vfs.s3.aws_access_key_id"] <- Sys.getenv("AWS-ACCESS-KEY")
-config["vfs.s3.aws_secret_access_key"] <- Sys.getenv("AWS-SECRET-KEY")
-config["vfs.s3.region"] <- Sys.getenv("AWS-REGION")
-context_with_config <- tiledb_ctx(config)
-clf_data[, date := as.Date(date)]
-clf_data[, date_rolling := as.Date(date_rolling)]
-# doesn't work
-fromDataFrame(
-  obj = clf_data,
-  uri = "s3://predictors-pead-v2",
-  col_index = c("symbol", "date"),
-  sparse = TRUE,
-  tile_domain=list(date=cbind(as.Date("1970-01-01"),
-                              as.Date("2099-12-31"))),
-  allows_dups = FALSE
-)
+
+# save to Azure blob
+endpoint = "https://snpmarketdata.blob.core.windows.net/"
+blob_key = readLines('./blob_key.txt')
+BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
+cont = storage_container(BLOBENDPOINT, "jphd")
+storage_write_csv(clf_data, cont, "pead-predictors-update.csv")

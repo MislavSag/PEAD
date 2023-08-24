@@ -46,7 +46,7 @@ snakeToCamel <- function(snake_str) {
 print("Prepare data")
 
 # read predictors
-data_tbl = fread("./pead-predictors.csv")
+data_tbl = fread("./pead-predictors-update.csv")
 # data_tbl <- fread("D:/features/pead-predictors-20230523202603.csv")
 
 # convert tibble to data.table
@@ -75,14 +75,6 @@ cols_features = cols_features_new
 targets_new = vapply(targets, snakeToCamel, FUN.VALUE = character(1L), USE.NAMES = FALSE)
 setnames(DT, targets, targets_new)
 targets = targets_new
-
-
-cols_features_ <- gsub('[\\"/]', '', cols_features) # Remove double quotes, backslashes, and forward slashes
-cols_features_ <- gsub('[[:cntrl:]]', '', cols_features_) # Remove control characters
-cols_features_ <- gsub('^\\w\\-\\.', '', cols_features_) # Remove control characters
-
-all(cols_features_ == cols_features)
-all(trimws(cols_features_) == cols_features)
 
 # convert columns to numeric. This is important only if we import existing features
 chr_to_num_cols <- setdiff(colnames(DT[, .SD, .SDcols = is.character]), c("symbol", "time", "right_time"))
@@ -449,6 +441,7 @@ search_space_nnet$add(
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
 
+# LAST
 # lightgbm graph
 # [LightGBM] [Fatal] Do not support special JSON characters in feature name.
 graph_template =
@@ -584,7 +577,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet), # at_bart
+    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_bart),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
