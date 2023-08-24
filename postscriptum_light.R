@@ -151,6 +151,9 @@ for (i in 1:nrow(bmr_files)) {
   bmr_dt = as.data.table(bmr)
 
   # get predictions
+  task_names = lapply(bmr_dt$task, `[[`, "id")
+  learner_names = lapply(bmr_dt$learner, `[[`, "id")
+  learner_names = gsub(".*\\.regr\\.|\\.tuned", "", learner_names)
   predictions = lapply(bmr_dt$prediction, function(x) as.data.table(x))
   predictions = lapply(seq_along(predictions), function(j)
     cbind(task = task_names[[j]],
@@ -196,6 +199,7 @@ predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = 
 predictions_dt_ensemble = predictions_dt[, .(mean_response = mean(response),
                                              median_response = median(response),
                                              sign_response = sum(sign(response)),
+                                             sd_response = sd(response),
                                              truth = mean(truth),
                                              symbol = symbol,
                                              date = date,
@@ -209,10 +213,13 @@ predictions_dt_ensemble[, `:=`(
   response_sign_sign_pos = sign_response > 9,
   response_sign_sign_neg = sign_response < -9
 )]
+predictions_dt_ensemble[, response_sign_sd_q := quantile(sd_response, probs = 0.05), by = "task"]
+predictions_dt_ensemble[, mfd := as.factor(ifelse(sd_response < response_sign_sd_q, 1, -1))] # machine forecast dissagreement
+
 ids_ = c("task")
 predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
 predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
-
+predictions_dt_ensemble[, mlr3measures::acc(truth_sign, mfd), by = ids_]
 predictions_dt_ensemble[response_sign_sign_pos == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
 predictions_dt_ensemble[response_sign_sign_neg == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
 
@@ -222,9 +229,12 @@ predictions_dt_ensemble[median_response > 0.5, mlr3measures::acc(truth_sign, res
 predictions_dt_ensemble[mean_response > 0.5, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
 predictions_dt_ensemble[median_response > 1, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
 predictions_dt_ensemble[mean_response > 1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
+predictions_dt_ensemble[sd_response > 1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
 
 # best
 predictions_dt_ensemble[response_sign_sign_pos == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+predictions_dt_ensemble[response_sign_sign_pos == TRUE & epsDiff > 0][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+predictions_dt_ensemble[response_sign_sign_pos == TRUE & epsDiff > 0 & sd_response > 3][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
 
 predictions_dt_ensemble[response_sign_sign_neg == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
 predictions_dt_ensemble[response_sign_sign_neg == TRUE & epsDiff < 0][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
