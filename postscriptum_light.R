@@ -129,7 +129,7 @@ rm(list = c("task_ret_week", "task_ret_month", "task_ret_month2", "task_ret_quar
 id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 
 # set files with benchmarks
-bmr_files = list.files(list.files("F:", pattern = "^H4_v2", full.names = TRUE), full.names = TRUE)
+bmr_files = list.files(list.files("F:", pattern = "^H4-v3", full.names = TRUE), full.names = TRUE)
 
 # arrange files
 cv_ = as.integer(gsub("\\d+-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
@@ -210,8 +210,8 @@ predictions_dt_ensemble[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign_median = as.factor(sign(median_response)),
   response_sign_mean = as.factor(sign(mean_response)),
-  response_sign_sign_pos = sign_response > 9,
-  response_sign_sign_neg = sign_response < -9
+  response_sign_sign_pos = sign_response > 10,
+  response_sign_sign_neg = sign_response < -10
 )]
 predictions_dt_ensemble[, response_sign_sd_q := quantile(sd_response, probs = 0.05), by = "task"]
 predictions_dt_ensemble[, mfd := as.factor(ifelse(sd_response < response_sign_sd_q, 1, -1))] # machine forecast dissagreement
@@ -234,7 +234,7 @@ predictions_dt_ensemble[sd_response > 1, mlr3measures::acc(truth_sign, response_
 # best
 predictions_dt_ensemble[response_sign_sign_pos == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
 predictions_dt_ensemble[response_sign_sign_pos == TRUE & epsDiff > 0][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
-predictions_dt_ensemble[response_sign_sign_pos == TRUE & epsDiff > 0 & sd_response > 3][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+predictions_dt_ensemble[response_sign_sign_pos == TRUE & epsDiff > 0 & sd_response > 2][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
 
 predictions_dt_ensemble[response_sign_sign_neg == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
 predictions_dt_ensemble[response_sign_sign_neg == TRUE & epsDiff < 0][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]

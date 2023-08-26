@@ -433,18 +433,19 @@ search_space_bart$add(
 # iter = p_int(lower = 100, upper = 1000)
 
 
-# TODO
-# # catboost graph
-# graph_nnet = graph_template %>>%
-#   po("learner", learner = lrn("regr.nnet", MaxNWts = 40000))
-# graph_nnet = as_learner(graph_nnet)
-# as.data.table(graph_nnet$param_set)[, .(id, class, lower, upper, levels)]
-# search_space_nnet = search_space_template$clone()
-# search_space_nnet$add(
-#   ps(regr.nnet.size = p_int(lower = 5, upper = 30),
-#      regr.nnet.decay = p_dbl(lower = 0.0001, upper = 0.1),
-#      regr.nnet.maxit = p_int(lower = 50, upper = 500))
-# )
+# catboost graph
+graph_catboost = graph_template %>>%
+  po("learner", learner = lrn("regr.catboost"))
+graph_catboost = as_learner(graph_catboost)
+as.data.table(graph_catboost$param_set)[, .(id, class, lower, upper, levels)]
+search_space_catboost = search_space_template$clone()
+# https://catboost.ai/en/docs/concepts/parameter-tuning#description10
+search_space_catboost$add(
+  ps(regr.catboost.learning_rate   = p_dbl(lower = 0.01, upper = 0.3),
+     regr.catboost.depth           = p_int(lower = 4, upper = 10),
+     regr.catboost.l2_leaf_reg     = p_int(lower = 1, upper = 5),
+     regr.catboost.random_strength = p_int(lower = 0, upper = 3))
+)
 
 # nnet graph
 graph_nnet = graph_template %>>%
@@ -453,7 +454,7 @@ graph_nnet = as_learner(graph_nnet)
 as.data.table(graph_nnet$param_set)[, .(id, class, lower, upper, levels)]
 search_space_nnet = search_space_template$clone()
 search_space_nnet$add(
-  ps(regr.nnet.size = p_int(lower = 5, upper = 30),
+  ps(regr.nnet.size  = p_int(lower = 5, upper = 30),
      regr.nnet.decay = p_dbl(lower = 0.0001, upper = 0.1),
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
@@ -608,6 +609,16 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     terminator = trm("none")
   )
 
+  # auto tuner earth
+  at_catboost = auto_tuner(
+    tuner = tnr("hyperband", eta = 5),
+    learner = graph_catboost,
+    resampling = custom_,
+    measure = msr("adjloss2"),
+    search_space = search_space_catboost,
+    terminator = trm("none")
+  )
+
   # outer resampling
   customo_ = rsmp("custom")
   customo_$instantiate(task_ret_week, list(cv_outer$train_set(i)), list(cv_outer$test_set(i)))
@@ -616,7 +627,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth), # at_bart
+    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_catboost), # at_bart
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)

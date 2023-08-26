@@ -307,27 +307,40 @@ gc()
 # util function that returns most recently saved predictor object
 get_latest = function(predictors = "RollingExuberFeatures") {
   f = file.info(list.files("D:/features", full.names = TRUE, pattern = predictors))
+  if (length(f) == 0) {
+    print(paste0("There is no file with ", predictors))
+    return(NULL)
+  }
   latest = tail(f[order(f$ctime), ], 1)
   row.names(latest)
 }
 
 # import existing data
+f_fread = function(x) tryCatch(fread(get_latest(x)), error = function(e) NULL)
 # OhlcvFeaturesSetSample = fread(get_latest("OhlcvFeaturesSetSample"))
-RollingBidAskFeatures = fread(get_latest("RollingBidAskFeatures"))
-RollingBackCusumFeatures = fread(get_latest("RollingBackCusumFeatures"))
-RollingExuberFeatures = fread(get_latest("RollingExuberFeatures"))
-RollingForecatsFeatures = fread(get_latest("RollingForecatsFeatures"))
-RollingGpdFeatures = fread(get_latest("RollingGpdFeatures"))
-RollingTheftCatch22Features = fread(get_latest("RollingTheftCatch22Features"))
-RollingTheftTsfelFeatures = fread(get_latest("RollingTheftTsfelFeatures"))
-RollingTsfeaturesFeatures = fread(get_latest("RollingTsfeaturesFeatures"))
-RollingWaveletArimaFeatures = fread(get_latest("RollingWaveletArimaFeatures"))
+RollingBidAskFeatures = f_fread("RollingBidAskFeatures")
+RollingBackCusumFeatures = f_fread("RollingBackCusumFeatures")
+RollingExuberFeatures = f_fread("RollingExuberFeatures")
+RollingForecatsFeatures = f_fread("RollingForecatsFeatures")
+RollingGpdFeatures = f_fread("RollingGpdFeatures")
+RollingTheftCatch22Features = f_fread("RollingTheftCatch22Features")
+RollingTheftTsfelFeatures = f_fread("RollingTheftTsfelFeatures")
+RollingTsfeaturesFeatures = f_fread("RollingTsfeaturesFeatures")
+RollingWaveletArimaFeatures = f_fread("RollingWaveletArimaFeatures")
+RollingFracdiffFeatures = f_fread("RollingFracdiffFeatures")
 
 # util function for identifying missing dates and create at_ object
 get_at_ = function(predictors) {
   # debug
-  # predictors = copy(RollingBidAskFeatures)
+  # predictors = copy(RollingFracdiffFeatures)
 
+  # test if previous data exists
+  if (is.null(predictors)) {
+    print("No data. ")
+    return(1:nrow(dataset))
+  }
+
+  # get only new data
   new_dataset = fsetdiff(dataset[, .(symbol, date = as.IDate(date))],
                          predictors[, .(symbol, date)])
   # new_dataset = new_dataset[date > as.Date("2021-01-01")]
@@ -378,34 +391,38 @@ if (length(at_) > 0) {
 # Exuber features
 print("Calculate Exuber features.")
 at_ = get_at_(RollingExuberFeatures)
-RollingExuberInit = RollingExuber$new(windows = c(100, 300, 600),
-                                      workers = 6L,
-                                      at = at_,
-                                      lag = lag_,
-                                      exuber_lag = 1L)
-RollingExuberFeaturesNew = RollingExuberInit$get_rolling_features(OhlcvInstance, TRUE)
-gc()
+if (length(at_) > 0) {
+  RollingExuberInit = RollingExuber$new(windows = c(100, 300, 600),
+                                        workers = 6L,
+                                        at = at_,
+                                        lag = lag_,
+                                        exuber_lag = 1L)
+  RollingExuberFeaturesNew = RollingExuberInit$get_rolling_features(OhlcvInstance, TRUE)
+  gc()
 
-# merge and save
-RollingExuberFeaturesNew[, date := as.IDate(date)]
-RollingExuberFeatures_new_merged = rbind(RollingExuberFeatures, RollingExuberFeaturesNew)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingExuberFeatures_new_merged, paste0("D:/features/PEAD-RollingExuberFeatures-", time_, ".csv"))
+  # merge and save
+  RollingExuberFeaturesNew[, date := as.IDate(date)]
+  RollingExuberFeatures_new_merged = rbind(RollingExuberFeatures, RollingExuberFeaturesNew)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingExuberFeatures_new_merged, paste0("D:/features/PEAD-RollingExuberFeatures-", time_, ".csv"))
+}
 
 # Forecast Features
 print("Calculate AutoArima features.")
 at_ = get_at_(RollingForecatsFeatures)
-RollingForecatsInstance = RollingForecats$new(windows = c(252 * 2), workers = 4L,
-                                              lag = lag_, at = at_,
-                                              forecast_type = c("autoarima", "nnetar", "ets"),
-                                              h = 22)
-RollingForecatsFeaturesNew = RollingForecatsInstance$get_rolling_features(OhlcvInstance)
+if (length(at_) > 0) {
+  RollingForecatsInstance = RollingForecats$new(windows = c(252 * 2), workers = 4L,
+                                                lag = lag_, at = at_,
+                                                forecast_type = c("autoarima", "nnetar", "ets"),
+                                                h = 22)
+  RollingForecatsFeaturesNew = RollingForecatsInstance$get_rolling_features(OhlcvInstance)
 
-# merge and save
-RollingForecatsFeaturesNew[, date := as.IDate(date)]
-RollingForecatsFeaturesNewMerged = rbind(RollingForecatsFeatures, RollingForecatsFeaturesNew)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingForecatsFeaturesNewMerged, paste0("D:/features/PEAD-RollingForecatsFeatures-", time_, ".csv"))
+  # merge and save
+  RollingForecatsFeaturesNew[, date := as.IDate(date)]
+  RollingForecatsFeaturesNewMerged = rbind(RollingForecatsFeatures, RollingForecatsFeaturesNew)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingForecatsFeaturesNewMerged, paste0("D:/features/PEAD-RollingForecatsFeatures-", time_, ".csv"))
+}
 
 # # GAS
 # print("Calculate GAS features.")
@@ -433,51 +450,57 @@ fwrite(RollingForecatsFeaturesNewMerged, paste0("D:/features/PEAD-RollingForecat
 # Gpd features
 print("Calculate Gpd features.")
 at_ = get_at_(RollingGpdFeatures)
-RollingGpdInit = RollingGpd$new(windows = c(22 * 3, 22 * 6), workers = 6L,
-                                at = at_, lag = lag_,
-                                threshold = c(0.03, 0.05, 0.07))
-RollingGpdFeaturesNew = RollingGpdInit$get_rolling_features(OhlcvInstance)
+if (length(at_) > 0) {
+  RollingGpdInit = RollingGpd$new(windows = c(22 * 3, 22 * 6), workers = 6L,
+                                  at = at_, lag = lag_,
+                                  threshold = c(0.03, 0.05, 0.07))
+  RollingGpdFeaturesNew = RollingGpdInit$get_rolling_features(OhlcvInstance)
 
-# merge and save
-RollingGpdFeaturesNew[, date := as.IDate(date)]
-# cols = colnames(RollingGpdFeatures)
-# RollingGpdFeaturesNew = RollingGpdFeaturesNew[, ..cols]
-RollingGpdFeaturesNewMerged = rbind(RollingGpdFeatures, RollingGpdFeaturesNew, fill = TRUE)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingGpdFeaturesNewMerged, paste0("D:/features/PEAD-RollingGpdFeatures-", time_, ".csv"))
+  # merge and save
+  RollingGpdFeaturesNew[, date := as.IDate(date)]
+  # cols = colnames(RollingGpdFeatures)
+  # RollingGpdFeaturesNew = RollingGpdFeaturesNew[, ..cols]
+  RollingGpdFeaturesNewMerged = rbind(RollingGpdFeatures, RollingGpdFeaturesNew, fill = TRUE)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingGpdFeaturesNewMerged, paste0("D:/features/PEAD-RollingGpdFeatures-", time_, ".csv"))
+}
 
 # theft catch22 features
 print("Calculate Catch22 and feasts features.")
 at_ = get_at_(RollingTheftCatch22Features)
-RollingTheftInit = RollingTheft$new(windows = c(5, 22, 22 * 3, 22 * 12),
-                                    workers = 6L, at = at_, lag = lag_,
-                                    features_set = c("catch22", "feasts"))
-RollingTheftCatch22FeaturesNew = RollingTheftInit$get_rolling_features(OhlcvInstance)
-gc()
+if (length(at_) > 0) {
+  RollingTheftInit = RollingTheft$new(windows = c(5, 22, 22 * 3, 22 * 12),
+                                      workers = 6L, at = at_, lag = lag_,
+                                      features_set = c("catch22", "feasts"))
+  RollingTheftCatch22FeaturesNew = RollingTheftInit$get_rolling_features(OhlcvInstance)
+  gc()
 
-# save
-RollingTheftCatch22FeaturesNew[, date := as.IDate(date)]
-RollingTheftCatch22Features[, c("feasts____22_5", "feasts____25_22") := NULL]
-# cols = colnames(RollingTheftCatch22Features)
-# RollingTheftCatch22FeaturesNew = RollingTheftCatch22FeaturesNew[, ..cols]
-RollingTheftCatch22FeaturesNewMerged = rbind(RollingTheftCatch22Features, RollingTheftCatch22FeaturesNew)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingTheftCatch22FeaturesNewMerged, paste0("D:/features/PEAD-RollingTheftCatch22Features-", time_, ".csv"))
+  # save
+  RollingTheftCatch22FeaturesNew[, date := as.IDate(date)]
+  RollingTheftCatch22Features[, c("feasts____22_5", "feasts____25_22") := NULL]
+  # cols = colnames(RollingTheftCatch22Features)
+  # RollingTheftCatch22FeaturesNew = RollingTheftCatch22FeaturesNew[, ..cols]
+  RollingTheftCatch22FeaturesNewMerged = rbind(RollingTheftCatch22Features, RollingTheftCatch22FeaturesNew)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingTheftCatch22FeaturesNewMerged, paste0("D:/features/PEAD-RollingTheftCatch22Features-", time_, ".csv"))
+}
 
 # tsfeatures features
 print("Calculate tsfeatures features.")
 at_ = get_at_(RollingTsfeaturesFeatures)
-RollingTsfeaturesInit = RollingTsfeatures$new(windows = c(22 * 3, 22 * 6),
-                                              workers = 6L, at = at_,
-                                              lag = lag_, scale = TRUE)
-RollingTsfeaturesFeaturesNew = RollingTsfeaturesInit$get_rolling_features(OhlcvInstance)
-gc()
+if (length(at_) > 0) {
+  RollingTsfeaturesInit = RollingTsfeatures$new(windows = c(22 * 3, 22 * 6),
+                                                workers = 6L, at = at_,
+                                                lag = lag_, scale = TRUE)
+  RollingTsfeaturesFeaturesNew = RollingTsfeaturesInit$get_rolling_features(OhlcvInstance)
+  gc()
 
-# save
-RollingTsfeaturesFeaturesNew[, date := as.IDate(date)]
-RollingTsfeaturesFeaturesNewMerged = rbind(RollingTsfeaturesFeatures, RollingTsfeaturesFeaturesNew)
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(RollingTsfeaturesFeaturesNewMerged, paste0("D:/features/PEAD-RollingTsfeaturesFeatures-", time_, ".csv"))
+  # save
+  RollingTsfeaturesFeaturesNew[, date := as.IDate(date)]
+  RollingTsfeaturesFeaturesNewMerged = rbind(RollingTsfeaturesFeatures, RollingTsfeaturesFeaturesNew)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingTsfeaturesFeaturesNewMerged, paste0("D:/features/PEAD-RollingTsfeaturesFeatures-", time_, ".csv"))
+}
 
 # theft tsfel features, Must be alone, because number of workers have to be 1L
 print("Calculate tsfel features.")
@@ -522,6 +545,7 @@ if (length(at_) > 0) {
 # RollingTvgarchFeatures = RollingTvgarchInit$get_rolling_features(OhlcvInstance)
 
 # Wavelet arima
+print("Wavelet predictors")
 at_ = get_at_(RollingWaveletArimaFeatures)
 if (length(at_) > 0) {
   RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6L,
@@ -535,6 +559,25 @@ if (length(at_) > 0) {
   time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
   fwrite(RollingWaveletArimaFeaturesNewMerged, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
 }
+
+# Fracdiff
+print("Fradiff predictors")
+at_ = get_at_(RollingFracdiffFeatures)
+at_ = ifelse(at_)
+if (length(at_) > 0) {
+  RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6L,
+                                                        lag = lag_, at = at_, filter = "haar")
+  RollingWaveletArimaFeaturesNew = RollingWaveletArimaInstance$get_rolling_features(OhlcvInstance)
+  gc()
+
+  # save
+  RollingWaveletArimaFeaturesNew[, date := as.IDate(date)]
+  RollingWaveletArimaFeaturesNewMerged = rbind(RollingWaveletArimaFeatures, RollingWaveletArimaFeaturesNew)
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingWaveletArimaFeaturesNewMerged, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
+}
+
+
 
 # prepare arguments for features
 prices_events <- merge(prices_dt, dataset[, .(symbol, date, eps)],
@@ -792,3 +835,78 @@ blob_key = readLines('./blob_key.txt')
 BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
 cont = storage_container(BLOBENDPOINT, "jphd")
 storage_write_csv(clf_data, cont, "pead-predictors-update.csv")
+
+
+
+# Ah, I see. You're looking to engineer new features by transforming and combining the existing ones to potentially capture more complex relationships in the data. Here are some techniques to increase the feature space:
+#
+# Differencing:
+#
+# For time series data, the difference between consecutive observations can be used as a feature.
+# For non-time series data, you can compute the difference between two or more related features.
+# Squares, Cubes, and Higher-order Polynomials:
+#
+# �
+# 2
+# ,
+# �
+# 3
+# ,
+# …
+# x
+# 2
+#  ,x
+# 3
+#  ,… can capture non-linear relationships.
+# Interaction Features:
+#
+# As mentioned earlier, you can create new features that are the product of two or more existing features.
+# Ratios:
+#
+# Compute the ratio of two features, which can be particularly useful if the relationship between the two features is multiplicative or if one feature can be a scale factor of another.
+# Rolling Statistics:
+#
+# For time series data, you can compute rolling statistics like rolling mean, rolling standard deviation, etc., over a window of time.
+# Lag Features:
+#
+# For time series data, values from previous time steps (lags) can be used as features.
+# Cumulative Sum:
+#
+# The running total of a feature can sometimes provide additional insights, especially in time series data.
+# Moving Averages:
+#
+# Simple moving averages or exponentially weighted moving averages can be used, especially for time series data.
+# Statistical Transformations:
+#
+# Features like z-scores, percentiles, or ranks of a feature can be added.
+# Frequency Encoding:
+#
+# For categorical features, you can create a new feature representing the frequency (or probability) of each category.
+# Embeddings:
+#
+# For high cardinality categorical features or text data, embeddings (like word2vec or entity embeddings) can be used to represent the data in a dense form.
+# Time Since:
+#
+# For event data or time series, the time since the last event or a particular condition was met.
+# Aggregated Features:
+#
+# Group by one or more features and compute aggregated statistics (mean, sum, variance, etc.) on another feature.
+# Cross-features:
+#
+# Combine two categorical features into a single feature, which can then be one-hot encoded or target encoded.
+# Decomposition Techniques:
+#
+# Techniques like PCA (Principal Component Analysis), t-SNE, or UMAP can be used to create new features, especially when dealing with high-dimensional data.
+# Wavelet Transform:
+#
+# For time series data, wavelet transforms can be used to decompose the series into different frequency components.
+# Fourier Transform:
+#
+# Decompose time series data into its constituent frequencies.
+# When engineering new features, it's essential to keep in mind:
+#
+#   Overfitting: Adding too many features, especially in relation to the number of observations, can lead to overfitting.
+# Collinearity: Some of these transformations can introduce multicollinearity, which can be problematic for certain algorithms.
+# Computational Complexity: More features mean more data to process, which can increase the computational requirements.
+# Interpretability: While some models might benefit from a larger feature space, the model's interpretability might decrease.
+# Always validate the effectiveness of the new features using techniques like cross-validation. Not all engineered features will necessarily improve model performance, so it's essential to be selective and iterative in your approach.
