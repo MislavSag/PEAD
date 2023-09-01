@@ -433,18 +433,83 @@ search_space_bart$add(
 # iter = p_int(lower = 100, upper = 1000)
 
 
-# catboost graph
-graph_catboost = graph_template %>>%
-  po("learner", learner = lrn("regr.catboost"))
-graph_catboost = as_learner(graph_catboost)
-as.data.table(graph_catboost$param_set)[, .(id, class, lower, upper, levels)]
-search_space_catboost = search_space_template$clone()
-# https://catboost.ai/en/docs/concepts/parameter-tuning#description10
-search_space_catboost$add(
-  ps(regr.catboost.learning_rate   = p_dbl(lower = 0.01, upper = 0.3),
-     regr.catboost.depth           = p_int(lower = 4, upper = 10),
-     regr.catboost.l2_leaf_reg     = p_int(lower = 1, upper = 5),
-     regr.catboost.random_strength = p_int(lower = 0, upper = 3))
+# # catboost graph
+# ### REMOVED FROM MLR3EXTRALEARNERS FROM VERSION 0.7.0.
+# graph_catboost = graph_template %>>%
+#   po("learner", learner = lrn("regr.catboost"))
+# graph_catboost = as_learner(graph_catboost)
+# as.data.table(graph_catboost$param_set)[, .(id, class, lower, upper, levels)]
+# search_space_catboost = search_space_template$clone()
+# # https://catboost.ai/en/docs/concepts/parameter-tuning#description10
+# search_space_catboost$add(
+#   ps(regr.catboost.learning_rate   = p_dbl(lower = 0.01, upper = 0.3),
+#      regr.catboost.depth           = p_int(lower = 4, upper = 10),
+#      regr.catboost.l2_leaf_reg     = p_int(lower = 1, upper = 5),
+#      regr.catboost.random_strength = p_int(lower = 0, upper = 3))
+# )
+
+# # gamboost graph
+# # Error in eval(predvars, data, env) : object 'adxDx14' not found
+# # This happened PipeOp regr.gamboost's $train()
+# # In addition: There were 50 or more warnings (use warnings() to see the first 50)
+# graph_gamboost = graph_template %>>%
+#   po("learner", learner = lrn("regr.gamboost"))
+# graph_gamboost = as_learner(graph_gamboost)
+# as.data.table(graph_gamboost$param_set)[, .(id, class, lower, upper, levels)]
+# search_space_gamboost = search_space_template$clone()
+# # https://catboost.ai/en/docs/concepts/parameter-tuning#description10
+# search_space_gamboost$add(
+#   ps(regr.gamboost.mstop       = p_int(lower = 10, upper = 100),
+#      regr.gamboost.nu          = p_dbl(lower = 0.01, upper = 0.5),
+#      regr.gamboost.baselearner = p_fct(levels = c("bbs", "bols", "btree")))
+# )
+
+# # gamboost graph
+# # Error in eval(predvars, data, env) : object 'adxDx14' not found
+# # This happened PipeOp regr.gamboost's $train()
+# # In addition: There were 50 or more warnings (use warnings() to see the first 50)
+# graph_gamboost = graph_template %>>%
+#   po("learner", learner = lrn("regr.gamboost"))
+# graph_gamboost = as_learner(graph_gamboost)
+# as.data.table(graph_gamboost$param_set)[, .(id, class, lower, upper, levels)]
+# search_space_gamboost = search_space_template$clone()
+# # https://catboost.ai/en/docs/concepts/parameter-tuning#description10
+# search_space_gamboost$add(
+#   ps(regr.gamboost.mstop       = p_int(lower = 10, upper = 100),
+#      regr.gamboost.nu          = p_dbl(lower = 0.01, upper = 0.5),
+#      regr.gamboost.baselearner = p_fct(levels = c("bbs", "bols", "btree")))
+# )
+
+# kknn graph
+graph_kknn = graph_template %>>%
+  po("learner", learner = lrn("regr.kknn"))
+graph_kknn = as_learner(graph_kknn)
+as.data.table(graph_kknn$param_set)[, .(id, class, lower, upper, levels)]
+search_space_kknn = ps(
+  # subsample for hyperband
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  # preprocessing
+  dropcorr.cutoff = p_fct(
+    levels = c("0.80", "0.90", "0.95", "0.99"),
+    trafo = function(x, param_set) {
+      switch(x,
+             "0.80" = 0.80,
+             "0.90" = 0.90,
+             "0.95" = 0.95,
+             "0.99" = 0.99)
+    }
+  ),
+  # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
+  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # filters
+  filter_branch.selection = p_fct(levels = c("jmi", "gausscov")),
+  # interaction
+  interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
+  # learner
+  regr.kknn.k        = p_int(lower = 1, upper = 50, logscale = TRUE),
+  regr.kknn.distance = p_dbl(lower = 1, upper = 5),
+  regr.kknn.kernel   = p_fct(levels = c("rectangular", "optimal", "epanechnikov", "biweight", "triweight", "cos",  "inv",  "gaussian", "rank"))
 )
 
 # nnet graph
@@ -610,14 +675,34 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   )
 
   # auto tuner earth
-  at_catboost = auto_tuner(
+  at_kknn = auto_tuner(
     tuner = tnr("hyperband", eta = 5),
-    learner = graph_catboost,
+    learner = graph_kknn,
     resampling = custom_,
     measure = msr("adjloss2"),
-    search_space = search_space_catboost,
+    search_space = search_space_kknn,
     terminator = trm("none")
   )
+
+  # # auto tuner mboost
+  # at_gamboost = auto_tuner(
+  #   tuner = tnr("hyperband", eta = 5),
+  #   learner = graph_gamboost,
+  #   resampling = custom_,
+  #   measure = msr("adjloss2"),
+  #   search_space = search_space_gamboost,
+  #   terminator = trm("none")
+  # )
+
+  # # auto tuner catboost
+  # at_catboost = auto_tuner(
+  #   tuner = tnr("hyperband", eta = 5),
+  #   learner = graph_catboost,
+  #   resampling = custom_,
+  #   measure = msr("adjloss2"),
+  #   search_space = search_space_catboost,
+  #   terminator = trm("none")
+  # )
 
   # outer resampling
   customo_ = rsmp("custom")
@@ -627,7 +712,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_catboost), # at_bart
+    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
