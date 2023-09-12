@@ -36,7 +36,7 @@ snakeToCamel <- function(snake_str) {
 }
 
 # define backends
-data_tbl = fread("./pead-predictors.csv")
+data_tbl = fread("./pead-predictors-update.csv")
 DT = as.data.table(data_tbl)
 DT[, date_rolling := as.IDate(date_rolling)]
 DT[, yearmonthid := round(date_rolling, digits = "month")]
@@ -123,13 +123,19 @@ if (test) {
 }
 rm(list = c("task_ret_week", "task_ret_month", "task_ret_month2", "task_ret_quarter"))
 
+# measures
+source("Linex.R")
+source("AdjLoss2.R")
+mlr_measures$add("linex", Linex)
+mlr_measures$add("adjloss2", AdjLoss2)
+
 
 # RESULTS -----------------------------------------------------------------
 # utils
 id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 
 # set files with benchmarks
-bmr_files = list.files(list.files("F:", pattern = "^H4-v3", full.names = TRUE), full.names = TRUE)
+bmr_files = list.files(list.files("F:", pattern = "^H4-v4", full.names = TRUE), full.names = TRUE)
 
 # arrange files
 cv_ = as.integer(gsub("\\d+-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
@@ -139,7 +145,7 @@ setorder(bmr_files, cv, i)
 
 # extract needed information from banchmark objects
 predictions_l = list()
-# imp_features_gausscov_l = list()
+aggs_l = list()
 # imp_features_corr_l = list()
 for (i in 1:nrow(bmr_files)) {
   # debug
@@ -149,6 +155,11 @@ for (i in 1:nrow(bmr_files)) {
   # get bmr object
   bmr = readRDS(bmr_files$bmr_files[i])
   bmr_dt = as.data.table(bmr)
+
+  # aggregate performances
+  agg_ = bmr$aggregate(msrs(c("regr.mse", "regr.mae", "adjloss2", "linex")))
+  cols = c("task_id", "learner_id", "iters", colnames(agg_)[7:length(colnames(agg_))])
+  agg_ = agg_[, learner_id := gsub(".*regr\\.|\\.tuned", "", learner_id)][, ..cols]
 
   # get predictions
   task_names = lapply(bmr_dt$task, `[[`, "id")
@@ -175,11 +186,13 @@ for (i in 1:nrow(bmr_files)) {
 
   # predictions
   predictions_l[[i]] = predictions
+  aggs_l[[i]] = agg_
 }
 
-# important variables
-# sort(table(unlist(imp_features_gausscov_l)))
-# sort(table(unlist(imp_features_corr_l)))
+# aggregated results
+aggregate_results = rbindlist(aggs_l, fill = TRUE)
+cols = colnames(aggregate_results)[4:ncol(aggregate_results)]
+aggregate_results[, lapply(.SD, function(x) mean(x)), by = .(task_id, learner_id), .SDcols = cols]
 
 # hit ratio
 # predictions_dt = rbindlist(lapply(bmrs, function(x) x$predictions), idcol = "fold")
@@ -209,59 +222,94 @@ predictions_dt_ensemble = predictions_dt[, .(mean_response = mean(response),
 predictions_dt_ensemble[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign_median = as.factor(sign(median_response)),
-  response_sign_mean = as.factor(sign(mean_response)),
-  response_sign_sign_pos = sign_response > 10,
-  response_sign_sign_neg = sign_response < -10
+  response_sign_mean = as.factor(sign(mean_response))
+  # response_sign_sign_pos = sign_response > 15,
+  # response_sign_sign_neg = sign_response < -15
 )]
-predictions_dt_ensemble[, response_sign_sd_q := quantile(sd_response, probs = 0.05), by = "task"]
-predictions_dt_ensemble[, mfd := as.factor(ifelse(sd_response < response_sign_sd_q, 1, -1))] # machine forecast dissagreement
+sign_response_max = predictions_dt_ensemble[, max(sign_response)]
+sign_response_seq = seq(as.integer(sign_response_max / 2), sign_response_max - 1)
+cols_sign_response_pos = paste0("response_sign_sign_pos", sign_response_seq)
+predictions_dt_ensemble[, (cols_sign_response_pos) := lapply(sign_response_seq, function(x) sign_response > x)]
 
-ids_ = c("task")
-predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
-predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
-predictions_dt_ensemble[, mlr3measures::acc(truth_sign, mfd), by = ids_]
-predictions_dt_ensemble[response_sign_sign_pos == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
-predictions_dt_ensemble[response_sign_sign_neg == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
+# check only sign ensamble performance
+lapply(cols_sign_response_pos, function(x) {
+  predictions_dt_ensemble[get(x) == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = "task"]
+})
 
-predictions_dt_ensemble[median_response > 0.1, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
-predictions_dt_ensemble[mean_response > 0.1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
-predictions_dt_ensemble[median_response > 0.5, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
-predictions_dt_ensemble[mean_response > 0.5, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
-predictions_dt_ensemble[median_response > 1, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
-predictions_dt_ensemble[mean_response > 1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
-predictions_dt_ensemble[sd_response > 1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
+
+# predictions_dt_ensemble[, response_sign_sd_q := quantile(sd_response, probs = 0.05), by = "task"]
+# predictions_dt_ensemble[, mfd := as.factor(ifelse(sd_response < response_sign_sd_q, 1, -1))] # machine forecast dissagreement
+#
+# ids_ = c("task")
+# predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
+# predictions_dt_ensemble[, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
+# predictions_dt_ensemble[, mlr3measures::acc(truth_sign, mfd), by = ids_]
+# predictions_dt_ensemble[response_sign_sign_pos == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+# predictions_dt_ensemble[response_sign_sign_neg == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
+#
+# predictions_dt_ensemble[median_response > 0.1, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
+# predictions_dt_ensemble[mean_response > 0.1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
+# predictions_dt_ensemble[median_response > 0.5, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
+# predictions_dt_ensemble[mean_response > 0.5, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
+# predictions_dt_ensemble[median_response > 1, mlr3measures::acc(truth_sign, response_sign_median), by = ids_]
+# predictions_dt_ensemble[mean_response > 1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
+# predictions_dt_ensemble[sd_response > 1, mlr3measures::acc(truth_sign, response_sign_mean), by = ids_]
 
 # best
-predictions_dt_ensemble[response_sign_sign_pos == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
-predictions_dt_ensemble[response_sign_sign_pos == TRUE & epsDiff > 0][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
-predictions_dt_ensemble[response_sign_sign_pos == TRUE & epsDiff > 0 & sd_response > 2][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+# predictions_dt_ensemble[response_sign_sign_pos == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+# predictions_dt_ensemble[response_sign_sign_pos == TRUE & epsDiff > 0][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+# predictions_dt_ensemble[response_sign_sign_pos == TRUE & epsDiff > 0 & sd_response > 2][, mlr3measures::acc(truth_sign, factor(as.integer(response_sign_sign_pos), levels = c(-1, 1))), by = ids_]
+#
+# predictions_dt_ensemble[response_sign_sign_neg == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
+# predictions_dt_ensemble[response_sign_sign_neg == TRUE & epsDiff < 0][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
 
-predictions_dt_ensemble[response_sign_sign_neg == TRUE][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
-predictions_dt_ensemble[response_sign_sign_neg == TRUE & epsDiff < 0][, mlr3measures::acc(truth_sign, factor(-as.integer(response_sign_sign_neg), levels = c(-1, 1))), by = ids_]
 
 # save to azure for QC backtest
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
-predictions_best = predictions_dt_ensemble[response_sign_sign_pos == TRUE]
-lapply(unique(predictions_best$task), function(x) {
+lapply(unique(predictions_dt_ensemble$task), function(x) {
   # debug
   # x = "taskRetQuarter"
 
   # prepare data
-  y = predictions_best[task == x]
-  y = y[, .(symbol, date, response = response_sign_mean, epsDiff)]
+  y = predictions_dt_ensemble[task == x]
+  cols = colnames(y)[grep("response_sign", colnames(y))]
+  cols = c("symbol", "date", "epsDiff", cols)
+  y = y[, ..cols]
   y = unique(y)
-  y = y[, .(
-    symbol = paste0(symbol, collapse = "|"),
-    response = paste0(response, collapse = "|"),
-    epsdiff = paste0(epsDiff, collapse = "|")
-  ), by = date]
-  y[, date := as.character(date)]
+
+  # remove where all false
+  y = y[response_sign_sign_pos9 == TRUE]
+
+  # by date
+  # cols_ = setdiff(cols, "date")
+  # y = y[, lapply(.SD, function(x) paste0(x, collapse = "|")), by = date]
+  # y[, date := as.character(date)]
+  # setorder(y, date)
+
+  # y = y[, .(
+  #   symbol = paste0(symbol, collapse = "|"),
+  #   response = paste0(response, collapse = "|"),
+  #   epsdiff = paste0(epsDiff, collapse = "|"),
+  #
+  # ), by = date]
+
+  # order
   setorder(y, date)
 
   # save to azure blob
-  print(y)
-  file_name_ =  paste0("pead-", x, "-v5.csv")
+  print(colnames(y))
+  file_name_ =  paste0("pead-", x, ".csv")
   storage_write_csv(y, cont, file_name_)
   # universe = y[, .(date, symbol)]
   # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
 })
+
+# systemic risk
+predictors_pos = predictions_dt_ensemble[, .(response_sign_sign_pos_agg = sum(response_sign_sign_pos)), by = "date"]
+predictors_neg = predictions_dt_ensemble[, .(response_sign_sign_pos_agg = sum(response_sign_sign_neg)), by = "date"]
+setorder(predictors_pos, date)
+setorder(predictors_neg, date)
+predictors_diff = as.xts.data.table(predictors_pos) - as.xts.data.table(predictors_neg)
+plot(as.xts.data.table(na.omit(predictors_pos)))
+plot(as.xts.data.table(na.omit(predictors_neg)))
+plot(predictors_diff)

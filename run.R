@@ -253,6 +253,92 @@ for (i in seq_along(train_sets)) {
                                     1)
 }
 
+# create expanding window function
+nested_cv_split_expanding = function(task,
+                                     train_length_start = 6,
+                                     tune_length = 1,
+                                     test_length = 1) {
+
+  # create cusom CV's for inner and outer sampling
+  custom_inner = rsmp("custom")
+  custom_outer = rsmp("custom")
+
+  # get year month id data
+  # task = task_ret_week$clone()
+  task_ = task$clone()
+  yearmonthid_ = task_$backend$data(cols = c("yearmonthid", "..row_id"),
+                                    rows = 1:task_$nrow)
+  stopifnot(all(task_$row_ids == yearmonthid_$`..row_id`))
+  groups_v = yearmonthid_[, unlist(unique(yearmonthid))]
+
+  # util vars
+  get_row_ids = function(mid) unlist(yearmonthid_[yearmonthid %in% mid, 2], use.names = FALSE)
+
+  # create train data
+  train_groups = lapply(train_length_start:length(groups_v), function(i) groups_v[1:i])
+
+  # create tune set
+  tune_groups <- lapply((train_length_start+1):length(groups_v), function(i) groups_v[i:(i+tune_length-1)])
+  index_keep = vapply(tune_groups, function(x) !any(is.na(x)), FUN.VALUE = logical(1L))
+  tune_groups = tune_groups[index_keep]
+
+  # equalize train and tune sets
+  train_groups = train_groups[1:length(tune_groups)]
+
+  # create test sets
+  insample_length = vapply(train_groups, function(x) as.integer(length(x) + tune_length), FUN.VALUE = integer(1))
+  test_groups <- lapply((insample_length+1):length(groups_v), function(i) groups_v[i:(i+test_length-1)])
+  index_keep = vapply(test_groups, function(x) !any(is.na(x)), FUN.VALUE = logical(1L))
+  test_groups = test_groups[index_keep]
+
+  # equalize train, tune and test sets
+  train_groups = train_groups[1:length(test_groups)]
+  tune_groups = tune_groups[1:length(test_groups)]
+
+  # make sets
+  train_sets <- lapply(train_groups, get_row_ids)
+  tune_sets <- lapply(tune_groups, get_row_ids)
+  test_sets <- lapply(test_groups, get_row_ids)
+
+  # test tune and test
+  test_1 = vapply(seq_along(train_groups), function(i) {
+    mondf(
+      tail(as.Date(train_groups[[i]], origin = "1970-01-01"), 1),
+      head(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1)
+    )
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_1 == 1))
+  test_2 = vapply(seq_along(train_groups), function(i) {
+    unlist(head(tune_sets[[i]], 1) - tail(train_sets[[i]], 1))
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_2 == 1))
+  test_3 = vapply(seq_along(train_groups), function(i) {
+    mondf(
+      tail(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1),
+      head(as.Date(test_groups[[i]], origin = "1970-01-01"), 1)
+    )
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_1 == 1))
+  test_4 = vapply(seq_along(train_groups), function(i) {
+    unlist(head(test_sets[[i]], 1) - tail(tune_sets[[i]], 1))
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_2 == 1))
+
+  # create inner and outer resamplings
+  custom_inner$instantiate(task, train_sets, tune_sets)
+  inner_sets = lapply(seq_along(train_groups), function(i) {
+    c(train_sets[[i]], tune_sets[[i]])
+  })
+  custom_outer$instantiate(task, inner_sets, test_sets)
+  return(list(custom_inner = custom_inner, custom_outer = custom_outer))
+}
+
+# generate cv's for expanding windows
+custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_week,
+                                                               train_length_start = 6,
+                                                               tune_length = 1,
+                                                               test_length = 1)
+
 # test if tain , validation and tst set follow logic
 lapply(seq_along(custom_cvs), function(i) {
   # extract custyom cv
@@ -272,7 +358,6 @@ lapply(seq_along(custom_cvs), function(i) {
   }, FUN.VALUE = logical(1L)))
   c(test1, test2)
 })
-
 
 
 # ADD PIPELINES -----------------------------------------------------------
@@ -309,6 +394,22 @@ mlr_measures$add("adjloss2", AdjLoss2)
 
 
 # GRAPH V2 ----------------------------------------------------------------
+# TODO: ADD abess
+# graph_template_abess =
+#   po("subsample") %>>% # uncomment this for hyperparameter tuning
+#   po("dropnacol", id = "dropnacol", cutoff = 0.05) %>>%
+#   po("dropna", id = "dropna") %>>%
+#   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
+#   po("fixfactors", id = "fixfactors") %>>%
+#   # po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+#   po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+#   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
+#   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
+#   po("uniformization") %>>%
+#   po("dropna", id = "dropna_v2") %>>%
+#   po("learner", learner = lrn("regr.abess"))
+
+
 # graph template
 graph_template =
   po("subsample") %>>% # uncomment this for hyperparameter tuning
@@ -323,8 +424,9 @@ graph_template =
   po("uniformization") %>>%
   po("dropna", id = "dropna_v2") %>>%
   # filters
-  po("branch", options = c("jmi", "gausscov"), id = "filter_branch") %>>%
+  po("branch", options = c("jmi", "relief", "gausscov"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
+              po("filter", filter = flt("relief"), filter.frac = 0.05),
               po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0))) %>>%
               # po("nop", id = "nop_filter"))) %>>%
   po("unbranch", id = "filter_unbranch") %>>%
@@ -355,7 +457,7 @@ search_space_template = ps(
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscov")),
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix"))
 )
@@ -397,7 +499,7 @@ search_space_xgboost = ps(
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscov")),
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
@@ -503,7 +605,7 @@ search_space_kknn = ps(
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscov")),
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
@@ -524,6 +626,42 @@ search_space_nnet$add(
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
 
+# ksvm graph
+graph_ksvm = graph_template %>>%
+  po("learner", learner = lrn("regr.ksvm"), scaled = FALSE)
+graph_ksvm = as_learner(graph_ksvm)
+as.data.table(graph_ksvm$param_set)[, .(id, class, lower, upper, levels)]
+search_space_ksvm = ps(
+  # subsample for hyperband
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  # preprocessing
+  dropcorr.cutoff = p_fct(
+    levels = c("0.80", "0.90", "0.95", "0.99"),
+    trafo = function(x, param_set) {
+      switch(x,
+             "0.80" = 0.80,
+             "0.90" = 0.90,
+             "0.95" = 0.95,
+             "0.99" = 0.99)
+    }
+  ),
+  # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
+  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # filters
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
+  # interaction
+  interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
+  # learner
+  regr.ksvm.kernel  = p_fct(levels = c("rbfdot", "polydot", "vanilladot",
+                                       "tanhdot", "laplacedot", "besseldot",
+                                       "anovadot", "splinedot")),
+  regr.ksvm.C       = p_dbl(lower = 0.0001, upper = 1000, logscale = TRUE),
+  regr.ksvm.degree  = p_int(lower = 1, upper = 5,
+                            depends = regr.ksvm.kernel %in% c("polydot", "besseldot", "anovadot")),
+  regr.ksvm.epsilon = p_dbl(lower = 0.01, upper = 1)
+)
+
 # LAST
 # lightgbm graph
 # [LightGBM] [Fatal] Do not support special JSON characters in feature name.
@@ -540,10 +678,10 @@ graph_template =
   po("uniformization") %>>%
   po("dropna", id = "dropna_v2") %>>%
   # filters
-  po("branch", options = c("jmi", "gausscov"), id = "filter_branch") %>>%
+  po("branch", options = c("jmi", "relief", "gausscov"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
+              po("filter", filter = flt("relief"), filter.frac = 0.05),
               po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0))) %>>%
-  # po("nop", id = "nop_filter"))) %>>%
   po("unbranch", id = "filter_unbranch")
 search_space_template = ps(
   # subsample for hyperband
@@ -563,7 +701,7 @@ search_space_template = ps(
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscov"))
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov"))
 )
 graph_lightgbm = graph_template %>>%
   po("learner", learner = lrn("regr.lightgbm"))
@@ -592,9 +730,12 @@ search_space_earth$add(
 threads = as.integer(Sys.getenv("NCPUS"))
 set_threads(graph_rf, n = threads)
 set_threads(graph_xgboost, n = threads)
-set_threads(graph_bart, n = threads)
+# set_threads(graph_bart, n = threads)
+set_threads(graph_ksvm, n = threads)
 set_threads(graph_nnet, n = threads)
+set_threads(graph_kknn, n = threads)
 set_threads(graph_lightgbm, n = threads)
+set_threads(graph_earth, n = threads)
 
 
 # NESTED CV BENCHMARK -----------------------------------------------------
@@ -644,6 +785,16 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     terminator = trm("none")
   )
 
+  # auto tuner ksvm
+  at_ksvm = auto_tuner(
+    tuner = tnr("hyperband", eta = 5),
+    learner = graph_ksvm,
+    resampling = custom_,
+    measure = msr("adjloss2"),
+    search_space = search_space_ksvm,
+    terminator = trm("none")
+  )
+
   # auto tuner nnet
   at_nnet = auto_tuner(
     tuner = tnr("hyperband", eta = 5),
@@ -674,7 +825,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     terminator = trm("none")
   )
 
-  # auto tuner earth
+  # auto tuner kknn
   at_kknn = auto_tuner(
     tuner = tnr("hyperband", eta = 5),
     learner = graph_kknn,
@@ -712,7 +863,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn),
+    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn, at_ksvm),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
