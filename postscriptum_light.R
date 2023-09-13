@@ -1,7 +1,8 @@
 library(data.table)
 library(mlr3verse)
 library(AzureStor)
-
+library(readr)
+# library(duckdb)
 
 
 
@@ -135,7 +136,7 @@ mlr_measures$add("adjloss2", AdjLoss2)
 id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 
 # set files with benchmarks
-bmr_files = list.files(list.files("F:", pattern = "^H4-v4", full.names = TRUE), full.names = TRUE)
+bmr_files = list.files(list.files("F:", pattern = "^H4-v5", full.names = TRUE), full.names = TRUE)
 
 # arrange files
 cv_ = as.integer(gsub("\\d+-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
@@ -230,6 +231,8 @@ sign_response_max = predictions_dt_ensemble[, max(sign_response)]
 sign_response_seq = seq(as.integer(sign_response_max / 2), sign_response_max - 1)
 cols_sign_response_pos = paste0("response_sign_sign_pos", sign_response_seq)
 predictions_dt_ensemble[, (cols_sign_response_pos) := lapply(sign_response_seq, function(x) sign_response > x)]
+cols_sign_response_neg = paste0("response_sign_sign_neg", sign_response_seq)
+predictions_dt_ensemble[, (cols_sign_response_neg) := lapply(sign_response_seq, function(x) sign_response < -x)]
 
 # check only sign ensamble performance
 lapply(cols_sign_response_pos, function(x) {
@@ -265,6 +268,7 @@ lapply(cols_sign_response_pos, function(x) {
 
 
 # save to azure for QC backtest
+############### CHANGE CODE ABOVE FILTER POSITIVE ##################
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
 lapply(unique(predictions_dt_ensemble$task), function(x) {
   # debug
@@ -299,17 +303,86 @@ lapply(unique(predictions_dt_ensemble$task), function(x) {
   # save to azure blob
   print(colnames(y))
   file_name_ =  paste0("pead-", x, ".csv")
-  storage_write_csv(y, cont, file_name_)
+  storage_write_csv(y, cont, file_name_, col_names = FALSE)
   # universe = y[, .(date, symbol)]
   # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
 })
 
+# save data for PEAD-SPY
+dt_sample = predictions_dt_ensemble[, .(task, date, mean_response)]
+dt_sample = unique(dt_sample)
+dt_sample = dt_sample[, .(resp = sum(mean_response)), by = date]
+setorder(dt_sample, date)
+dt_sample[, date := as.character(date)]
+cont = storage_container(BLOBENDPOINT, "qc-backtest")
+storage_write_csv(dt_sample, cont, paste0("pead-spy.csv"), col_names = FALSE)
+
+# import SPY data
+con <- dbConnect(duckdb::duckdb())
+query <- sprintf("
+    SELECT *
+    FROM 'F:/lean_root/data/all_stocks_daily.csv'
+    WHERE Symbol = 'spy'
+")
+spy <- dbGetQuery(con, query)
+dbDisconnect(con)
+spy = as.data.table(spy)
+spy = spy[, .(date = Date, close = `Adj Close`)]
+spy[, returns := close / shift(close) - 1]
+spy = na.omit(spy)
+
 # systemic risk
-predictors_pos = predictions_dt_ensemble[, .(response_sign_sign_pos_agg = sum(response_sign_sign_pos)), by = "date"]
-predictors_neg = predictions_dt_ensemble[, .(response_sign_sign_pos_agg = sum(response_sign_sign_neg)), by = "date"]
-setorder(predictors_pos, date)
-setorder(predictors_neg, date)
-predictors_diff = as.xts.data.table(predictors_pos) - as.xts.data.table(predictors_neg)
-plot(as.xts.data.table(na.omit(predictors_pos)))
-plot(as.xts.data.table(na.omit(predictors_neg)))
-plot(predictors_diff)
+library(PerformanceAnalytics)
+task_ = "taskRetQuarter"
+sample_ = predictions_dt_ensemble[task == task_]
+sample_ = unique(sample_)
+setorder(sample_, date)
+pos_cols = colnames(sample_)[grep("pos", colnames(sample_))]
+neg_cols = colnames(sample_)[grep("neg", colnames(sample_))]
+new_dt = sample_[, ..pos_cols] - sample_[, ..neg_cols]
+setnames(new_dt, gsub("pos", "net", pos_cols))
+sample_ = cbind(sample_, new_dt)
+sample_[, max(date)]
+plot(as.xts.data.table(sample_[, .N, by = date]))
+
+indicator = sample_[, .(response_sign_sign_net_agg = sum(response_sign_sign_net9),
+                        response_sign_sign_neg_agg = sum(response_sign_sign_neg9),
+                        mean_response_agg = sum(mean_response)),
+                    by = "date"]
+indicator[, `:=`(
+  response_sign_sign_net_agg = TTR::EMA(response_sign_sign_net_agg, 5, na.rm = TRUE),
+  response_sign_sign_neg_agg = TTR::EMA(response_sign_sign_neg_agg, 5, na.rm = TRUE),
+  mean_response_agg = TTR::EMA(mean_response_agg, 5, na.rm = TRUE)
+)
+]
+indicator = indicator[date > as.Date("2017-01-01") & date < as.Date("2023-01-01")]
+plot(as.xts.data.table(indicator)[, 1])
+plot(as.xts.data.table(indicator)[, 2])
+plot(as.xts.data.table(indicator)[, 3])
+
+backtest_data =  merge(spy, indicator, by = "date")
+backtest_data = na.omit(backtest_data)
+backtest_data[, signal := 1]
+backtest_data[shift(mean_response_agg) < 0, signal := 0]
+backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 2))])
+PerformanceAnalytics::charts.PerformanceSummary(backtest_data_xts)
+# backtest performance
+Performance <- function(x) {
+  cumRetx = Return.cumulative(x)
+  annRetx = Return.annualized(x, scale=252)
+  sharpex = SharpeRatio.annualized(x, scale=252)
+  winpctx = length(x[x > 0])/length(x[x != 0])
+  annSDx = sd.annualized(x, scale=252)
+
+  DDs <- findDrawdowns(x)
+  maxDDx = min(DDs$return)
+  # maxLx = max(DDs$length)
+
+  Perf = c(cumRetx, annRetx, sharpex, winpctx, annSDx, maxDDx) # , maxLx)
+  names(Perf) = c("Cumulative Return", "Annual Return","Annualized Sharpe Ratio",
+                  "Win %", "Annualized Volatility", "Maximum Drawdown") # "Max Length Drawdown")
+  return(Perf)
+}
+Performance(backtest_data_xts[, 1])
+Performance(backtest_data_xts[, 2])
+

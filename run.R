@@ -654,8 +654,7 @@ search_space_ksvm = ps(
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
   regr.ksvm.kernel  = p_fct(levels = c("rbfdot", "polydot", "vanilladot",
-                                       "tanhdot", "laplacedot", "besseldot",
-                                       "anovadot", "splinedot")),
+                                       "laplacedot", "besseldot", "anovadot")),
   regr.ksvm.C       = p_dbl(lower = 0.0001, upper = 1000, logscale = TRUE),
   regr.ksvm.degree  = p_int(lower = 1, upper = 5,
                             depends = regr.ksvm.kernel %in% c("polydot", "besseldot", "anovadot")),
