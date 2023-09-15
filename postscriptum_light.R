@@ -333,7 +333,7 @@ spy = na.omit(spy)
 
 # systemic risk
 library(PerformanceAnalytics)
-task_ = "taskRetQuarter"
+task_ = "taskRetMonth"
 sample_ = predictions_dt_ensemble[task == task_]
 sample_ = unique(sample_)
 setorder(sample_, date)
