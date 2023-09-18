@@ -252,7 +252,7 @@ nested_cv_split = function(task,
 # generate cv's
 train_sets = seq(12, 12 * 3, 12)
 validation_sets = train_sets / 12
-gap_sets = c(0:3)
+gap_sets = c(-1:2)
 mat = cbind(train = train_sets, tune = validation_sets)
 expanded_list  = lapply(gap_sets, function(v) {
   cbind.data.frame(mat, gap = v)
@@ -262,27 +262,27 @@ custom_cvs = list()
 for (i in 1:nrow(cv_param_grid)) {
   print(i)
   param_ = cv_param_grid[i]
-  if (param_$gap == 0) {
+  if (param_$gap == -1) {
     custom_cvs[[i]] = nested_cv_split(task_ret_week,
                                       param_$train,
                                       param_$tune,
                                       1,
-                                      param_$gap)
-  } else if (param_$gap == 1) {
+                                      param_$gap+1)
+  } else if (param_$gap == 0) {
     custom_cvs[[i]] = nested_cv_split(task_ret_month,
                                       param_$train,
                                       param_$tune,
                                       1,
                                       param_$gap)
 
-  } else if (param_$gap == 2) {
+  } else if (param_$gap == 1) {
     custom_cvs[[i]] = nested_cv_split(task_ret_month2,
                                       param_$train,
                                       param_$tune,
                                       1,
                                       param_$gap)
 
-  } else if (param_$gap == 3) {
+  } else if (param_$gap == 2) {
     custom_cvs[[i]] = nested_cv_split(task_ret_quarter,
                                       param_$train,
                                       param_$tune,
@@ -915,7 +915,8 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = task_, # list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn), # at_ksvm
+    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn,
+                    at_ksvm),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)

@@ -2,7 +2,8 @@ library(data.table)
 library(mlr3verse)
 library(AzureStor)
 library(readr)
-# library(duckdb)
+library(duckdb)
+library(PerformanceAnalytics)
 
 
 
@@ -136,11 +137,11 @@ mlr_measures$add("adjloss2", AdjLoss2)
 id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 
 # set files with benchmarks
-bmr_files = list.files(list.files("F:", pattern = "^H4-v5", full.names = TRUE), full.names = TRUE)
+bmr_files = list.files(list.files("F:/", pattern = "^H4-v5", full.names = TRUE), full.names = TRUE)
 
 # arrange files
-cv_ = as.integer(gsub("\\d+-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
-i_ = as.integer(gsub("-\\d+", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
+cv_ = as.integer(gsub("\\d+-.*-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
+i_ = as.integer(gsub("-.*-\\d+", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
 bmr_files = cbind.data.frame(bmr_files, cv = cv_, i = i_)
 setorder(bmr_files, cv, i)
 
@@ -233,6 +234,8 @@ cols_sign_response_pos = paste0("response_sign_sign_pos", sign_response_seq)
 predictions_dt_ensemble[, (cols_sign_response_pos) := lapply(sign_response_seq, function(x) sign_response > x)]
 cols_sign_response_neg = paste0("response_sign_sign_neg", sign_response_seq)
 predictions_dt_ensemble[, (cols_sign_response_neg) := lapply(sign_response_seq, function(x) sign_response < -x)]
+cols_ = colnames(predictions_dt_ensemble)[24:ncol(predictions_dt_ensemble)]
+predictions_dt_ensemble[, lapply(.SD, function(x) sum(x == TRUE)), .SDcols = cols_]
 
 # check only sign ensamble performance
 lapply(cols_sign_response_pos, function(x) {
@@ -272,7 +275,7 @@ lapply(cols_sign_response_pos, function(x) {
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
 lapply(unique(predictions_dt_ensemble$task), function(x) {
   # debug
-  # x = "taskRetQuarter"
+  # x = "taskRetMonth"
 
   # prepare data
   y = predictions_dt_ensemble[task == x]
@@ -303,7 +306,7 @@ lapply(unique(predictions_dt_ensemble$task), function(x) {
   # save to azure blob
   print(colnames(y))
   file_name_ =  paste0("pead-", x, ".csv")
-  storage_write_csv(y, cont, file_name_, col_names = FALSE)
+  storage_write_csv(y, cont, file_name_)
   # universe = y[, .(date, symbol)]
   # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
 })
@@ -330,10 +333,10 @@ spy = as.data.table(spy)
 spy = spy[, .(date = Date, close = `Adj Close`)]
 spy[, returns := close / shift(close) - 1]
 spy = na.omit(spy)
+plot(spy[, close])
 
 # systemic risk
-library(PerformanceAnalytics)
-task_ = "taskRetMonth"
+task_ = "taskRetQuarter"
 sample_ = predictions_dt_ensemble[task == task_]
 sample_ = unique(sample_)
 setorder(sample_, date)
@@ -343,6 +346,7 @@ new_dt = sample_[, ..pos_cols] - sample_[, ..neg_cols]
 setnames(new_dt, gsub("pos", "net", pos_cols))
 sample_ = cbind(sample_, new_dt)
 sample_[, max(date)]
+# sample_ = sample_[date < as.Date("2018-02-01")]
 plot(as.xts.data.table(sample_[, .N, by = date]))
 
 indicator = sample_[, .(response_sign_sign_net_agg = sum(response_sign_sign_net9),
@@ -363,8 +367,8 @@ plot(as.xts.data.table(indicator)[, 3])
 backtest_data =  merge(spy, indicator, by = "date")
 backtest_data = na.omit(backtest_data)
 backtest_data[, signal := 1]
-backtest_data[shift(mean_response_agg) < 0, signal := 0]
-backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 2))])
+backtest_data[shift(mean_response_agg) < -30, signal := 0]
+backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1.5))])
 PerformanceAnalytics::charts.PerformanceSummary(backtest_data_xts)
 # backtest performance
 Performance <- function(x) {
