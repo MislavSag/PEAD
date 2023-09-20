@@ -228,8 +228,9 @@ predictions_dt_ensemble[, `:=`(
   # response_sign_sign_pos = sign_response > 15,
   # response_sign_sign_neg = sign_response < -15
 )]
+predictions_dt_ensemble = unique(predictions_dt_ensemble)
 sign_response_max = predictions_dt_ensemble[, max(sign_response)]
-sign_response_seq = seq(as.integer(sign_response_max / 2), sign_response_max - 1)
+sign_response_seq = seq(as.integer(sign_response_max / 2)-3, sign_response_max - 1)
 cols_sign_response_pos = paste0("response_sign_sign_pos", sign_response_seq)
 predictions_dt_ensemble[, (cols_sign_response_pos) := lapply(sign_response_seq, function(x) sign_response > x)]
 cols_sign_response_neg = paste0("response_sign_sign_neg", sign_response_seq)
@@ -238,10 +239,11 @@ cols_ = colnames(predictions_dt_ensemble)[24:ncol(predictions_dt_ensemble)]
 predictions_dt_ensemble[, lapply(.SD, function(x) sum(x == TRUE)), .SDcols = cols_]
 
 # check only sign ensamble performance
-lapply(cols_sign_response_pos, function(x) {
+res = lapply(cols_sign_response_pos, function(x) {
   predictions_dt_ensemble[get(x) == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = "task"]
 })
-
+names(res) = cols_sign_response_pos
+res
 
 # predictions_dt_ensemble[, response_sign_sd_q := quantile(sd_response, probs = 0.05), by = "task"]
 # predictions_dt_ensemble[, mfd := as.factor(ifelse(sd_response < response_sign_sd_q, 1, -1))] # machine forecast dissagreement
@@ -314,8 +316,10 @@ lapply(unique(predictions_dt_ensemble$task), function(x) {
 # save data for PEAD-SPY
 dt_sample = predictions_dt_ensemble[, .(task, date, mean_response)]
 dt_sample = unique(dt_sample)
+# dt_sample = dt_sample[task == "taskRetWeek"]
 dt_sample = dt_sample[, .(resp = sum(mean_response)), by = date]
 setorder(dt_sample, date)
+plot(as.xts.data.table(dt_sample))
 dt_sample[, date := as.character(date)]
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
 storage_write_csv(dt_sample, cont, paste0("pead-spy.csv"), col_names = FALSE)
@@ -336,7 +340,7 @@ spy = na.omit(spy)
 plot(spy[, close])
 
 # systemic risk
-task_ = "taskRetQuarter"
+task_ = "taskRetMonth2"
 sample_ = predictions_dt_ensemble[task == task_]
 sample_ = unique(sample_)
 setorder(sample_, date)
@@ -367,8 +371,8 @@ plot(as.xts.data.table(indicator)[, 3])
 backtest_data =  merge(spy, indicator, by = "date")
 backtest_data = na.omit(backtest_data)
 backtest_data[, signal := 1]
-backtest_data[shift(mean_response_agg) < -30, signal := 0]
-backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1.5))])
+backtest_data[shift(mean_response_agg) < -5, signal := 0]
+backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1))])
 PerformanceAnalytics::charts.PerformanceSummary(backtest_data_xts)
 # backtest performance
 Performance <- function(x) {
@@ -389,4 +393,3 @@ Performance <- function(x) {
 }
 Performance(backtest_data_xts[, 1])
 Performance(backtest_data_xts[, 2])
-

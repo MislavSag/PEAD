@@ -8,6 +8,8 @@ library(mlr3tuning)
 library(mlr3misc)
 library(future)
 library(future.apply)
+# library(ggplot2)
+# library(patchwork)
 
 
 # SETUP -------------------------------------------------------------------
@@ -173,7 +175,8 @@ nested_cv_split = function(task,
                            train_length = 12,
                            tune_length = 1,
                            test_length = 1,
-                           gap_length = 3,
+                           gap_tune = 3,
+                           gap_test = 3,
                            id = task$id) {
 
   # get year month id data
@@ -188,9 +191,8 @@ nested_cv_split = function(task,
   custom_inner = rsmp("custom", id = task$id)
   custom_outer = rsmp("custom", id = task$id)
 
-
   # util vars
-  start_folds = 1:(length(groups_v)-train_length-tune_length-test_length-gap_length)
+  start_folds = 1:(length(groups_v)-train_length-tune_length-test_length-gap_test)
   get_row_ids = function(mid) unlist(yearmonthid_[yearmonthid %in% mid, 2], use.names = FALSE)
 
   # create train data
@@ -200,7 +202,7 @@ nested_cv_split = function(task,
 
   # create tune set
   tune_groups <- lapply(start_folds,
-                        function(x) groups_v[(x+train_length):(x+train_length+tune_length-1)])
+                        function(x) groups_v[(x+train_length+gap_tune):(x+train_length+gap_tune+tune_length-1)])
   tune_sets <- lapply(tune_groups, get_row_ids)
 
   # test train and tune
@@ -210,14 +212,14 @@ nested_cv_split = function(task,
       head(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1)
     )
   }, FUN.VALUE = numeric(1L))
-  stopifnot(all(test_1 == 1))
-  test_2 = vapply(seq_along(train_groups), function(i) {
-    unlist(head(tune_sets[[i]], 1) - tail(train_sets[[i]], 1))
-  }, FUN.VALUE = numeric(1L))
-  stopifnot(all(test_2 == 1))
+  stopifnot(all(test_1 == (1+gap_tune)))
+  # test_2 = vapply(seq_along(train_groups), function(i) {
+  #   unlist(head(tune_sets[[i]], 1) - tail(train_sets[[i]], 1))
+  # }, FUN.VALUE = numeric(1L))
+  # stopifnot(all(test_2 > ))
 
   # create test sets
-  insample_length = train_length + tune_length + gap_length
+  insample_length = train_length + gap_tune +  tune_length + gap_test
   test_groups <- lapply(start_folds,
                         function(x) groups_v[(x+insample_length):(x+insample_length+test_length-1)])
   test_sets <- lapply(test_groups, get_row_ids)
@@ -229,11 +231,11 @@ nested_cv_split = function(task,
       head(as.Date(test_groups[[i]], origin = "1970-01-01"), 1)
     )
   }, FUN.VALUE = numeric(1L))
-  stopifnot(all(test_1 == 1))
-  test_4 = vapply(seq_along(train_groups), function(i) {
-    unlist(head(test_sets[[i]], 1) - tail(tune_sets[[i]], 1))
-  }, FUN.VALUE = numeric(1L))
-  stopifnot(all(test_2 == 1))
+  stopifnot(all(test_1 == 1 + gap_test))
+  # test_4 = vapply(seq_along(train_groups), function(i) {
+  #   unlist(head(test_sets[[i]], 1) - tail(tune_sets[[i]], 1))
+  # }, FUN.VALUE = numeric(1L))
+  # stopifnot(all(test_2 == 1))
 
   # test
   # as.Date(train_groups[[2]])
@@ -252,7 +254,7 @@ nested_cv_split = function(task,
 # generate cv's
 train_sets = seq(12, 12 * 3, 12)
 validation_sets = train_sets / 12
-gap_sets = c(-1:2)
+gap_sets = c(0:3)
 mat = cbind(train = train_sets, tune = validation_sets)
 expanded_list  = lapply(gap_sets, function(v) {
   cbind.data.frame(mat, gap = v)
@@ -262,31 +264,35 @@ custom_cvs = list()
 for (i in 1:nrow(cv_param_grid)) {
   print(i)
   param_ = cv_param_grid[i]
-  if (param_$gap == -1) {
+  if (param_$gap == 0) {
     custom_cvs[[i]] = nested_cv_split(task_ret_week,
                                       param_$train,
                                       param_$tune,
-                                      1,
+                                      2,
+                                      param_$gap+1,
                                       param_$gap+1)
-  } else if (param_$gap == 0) {
+  } else if (param_$gap == 1) {
     custom_cvs[[i]] = nested_cv_split(task_ret_month,
                                       param_$train,
                                       param_$tune,
-                                      1,
-                                      param_$gap)
-
-  } else if (param_$gap == 1) {
-    custom_cvs[[i]] = nested_cv_split(task_ret_month2,
-                                      param_$train,
-                                      param_$tune,
-                                      1,
+                                      2,
+                                      param_$gap,
                                       param_$gap)
 
   } else if (param_$gap == 2) {
+    custom_cvs[[i]] = nested_cv_split(task_ret_month2,
+                                      param_$train,
+                                      param_$tune,
+                                      2,
+                                      param_$gap,
+                                      param_$gap)
+
+  } else if (param_$gap == 3) {
     custom_cvs[[i]] = nested_cv_split(task_ret_quarter,
                                       param_$train,
                                       param_$tune,
-                                      1,
+                                      2,
+                                      param_$gap,
                                       param_$gap)
 
   }
@@ -295,93 +301,116 @@ for (i in 1:nrow(cv_param_grid)) {
 # test
 length(custom_cvs) == nrow(cv_param_grid)
 
-# # create expanding window function
-# nested_cv_split_expanding = function(task,
-#                                      train_length_start = 6,
-#                                      tune_length = 1,
-#                                      test_length = 1) {
-#
-#   # create cusom CV's for inner and outer sampling
-#   custom_inner = rsmp("custom")
-#   custom_outer = rsmp("custom")
-#
-#   # get year month id data
-#   # task = task_ret_week$clone()
-#   task_ = task$clone()
-#   yearmonthid_ = task_$backend$data(cols = c("yearmonthid", "..row_id"),
-#                                     rows = 1:task_$nrow)
-#   stopifnot(all(task_$row_ids == yearmonthid_$`..row_id`))
-#   groups_v = yearmonthid_[, unlist(unique(yearmonthid))]
-#
-#   # util vars
-#   get_row_ids = function(mid) unlist(yearmonthid_[yearmonthid %in% mid, 2], use.names = FALSE)
-#
-#   # create train data
-#   train_groups = lapply(train_length_start:length(groups_v), function(i) groups_v[1:i])
-#
-#   # create tune set
-#   tune_groups <- lapply((train_length_start+1):length(groups_v), function(i) groups_v[i:(i+tune_length-1)])
-#   index_keep = vapply(tune_groups, function(x) !any(is.na(x)), FUN.VALUE = logical(1L))
-#   tune_groups = tune_groups[index_keep]
-#
-#   # equalize train and tune sets
-#   train_groups = train_groups[1:length(tune_groups)]
-#
-#   # create test sets
-#   insample_length = vapply(train_groups, function(x) as.integer(length(x) + tune_length), FUN.VALUE = integer(1))
-#   test_groups <- lapply((insample_length+1):length(groups_v), function(i) groups_v[i:(i+test_length-1)])
-#   index_keep = vapply(test_groups, function(x) !any(is.na(x)), FUN.VALUE = logical(1L))
-#   test_groups = test_groups[index_keep]
-#
-#   # equalize train, tune and test sets
-#   train_groups = train_groups[1:length(test_groups)]
-#   tune_groups = tune_groups[1:length(test_groups)]
-#
-#   # make sets
-#   train_sets <- lapply(train_groups, get_row_ids)
-#   tune_sets <- lapply(tune_groups, get_row_ids)
-#   test_sets <- lapply(test_groups, get_row_ids)
-#
-#   # test tune and test
-#   test_1 = vapply(seq_along(train_groups), function(i) {
-#     mondf(
-#       tail(as.Date(train_groups[[i]], origin = "1970-01-01"), 1),
-#       head(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1)
-#     )
-#   }, FUN.VALUE = numeric(1L))
-#   stopifnot(all(test_1 == 1))
-#   test_2 = vapply(seq_along(train_groups), function(i) {
-#     unlist(head(tune_sets[[i]], 1) - tail(train_sets[[i]], 1))
-#   }, FUN.VALUE = numeric(1L))
-#   stopifnot(all(test_2 == 1))
-#   test_3 = vapply(seq_along(train_groups), function(i) {
-#     mondf(
-#       tail(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1),
-#       head(as.Date(test_groups[[i]], origin = "1970-01-01"), 1)
-#     )
-#   }, FUN.VALUE = numeric(1L))
-#   stopifnot(all(test_1 == 1))
-#   test_4 = vapply(seq_along(train_groups), function(i) {
-#     unlist(head(test_sets[[i]], 1) - tail(tune_sets[[i]], 1))
-#   }, FUN.VALUE = numeric(1L))
-#   stopifnot(all(test_2 == 1))
-#
-#   # create inner and outer resamplings
-#   custom_inner$instantiate(task, train_sets, tune_sets)
-#   inner_sets = lapply(seq_along(train_groups), function(i) {
-#     c(train_sets[[i]], tune_sets[[i]])
-#   })
-#   custom_outer$instantiate(task, inner_sets, test_sets)
-#   return(list(custom_inner = custom_inner, custom_outer = custom_outer))
-# }
-#
-# # generate cv's for expanding windows
-# custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_week,
-#                                                                train_length_start = 6,
-#                                                                tune_length = 1,
-#                                                                test_length = 1)
-#
-# # test if tain , validation and tst set follow logic
+# create expanding window function
+nested_cv_split_expanding = function(task,
+                                     train_length_start = 6,
+                                     tune_length = 3,
+                                     test_length = 3,
+                                     gap_tune = 1,
+                                     gap_test = 1,
+                                     id = task$id) {
+
+  # get year month id data
+  # task = task_ret_week$clone()
+  task_ = task$clone()
+  yearmonthid_ = task_$backend$data(cols = c("yearmonthid", "..row_id"),
+                                    rows = 1:task_$nrow)
+  stopifnot(all(task_$row_ids == yearmonthid_$`..row_id`))
+  groups_v = yearmonthid_[, unlist(unique(yearmonthid))]
+
+  # create cusom CV's for inner and outer sampling
+  custom_inner = rsmp("custom", id = task$id)
+  custom_outer = rsmp("custom", id = task$id)
+
+  # util vars
+  get_row_ids = function(mid) unlist(yearmonthid_[yearmonthid %in% mid, 2], use.names = FALSE)
+
+  # create train data
+  train_groups = lapply(train_length_start:length(groups_v), function(i) groups_v[1:i])
+
+  # create tune set
+  tune_groups <- lapply((train_length_start+gap_tune+1):length(groups_v), function(i) groups_v[i:(i+tune_length+gap_tune-1)])
+  index_keep = vapply(tune_groups, function(x) !any(is.na(x)), FUN.VALUE = logical(1L))
+  tune_groups = tune_groups[index_keep]
+
+  # equalize train and tune sets
+  train_groups = train_groups[1:length(tune_groups)]
+
+  # create test sets
+  insample_length = vapply(train_groups, function(x) as.integer(length(x) + gap_tune + tune_length + gap_test), FUN.VALUE = integer(1))
+  test_groups <- lapply(insample_length+gap_test+1, function(i) groups_v[i:(i+test_length-1)])
+  index_keep = vapply(test_groups, function(x) !any(is.na(x)), FUN.VALUE = logical(1L))
+  test_groups = test_groups[index_keep]
+
+  # equalize train, tune and test sets
+  train_groups = train_groups[1:length(test_groups)]
+  tune_groups = tune_groups[1:length(test_groups)]
+
+  # make sets
+  train_sets <- lapply(train_groups, get_row_ids)
+  tune_sets <- lapply(tune_groups, get_row_ids)
+  test_sets <- lapply(test_groups, get_row_ids)
+
+  # test tune and test
+  test_1 = vapply(seq_along(train_groups), function(i) {
+    mondf(
+      tail(as.Date(train_groups[[i]], origin = "1970-01-01"), 1),
+      head(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1)
+    )
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_1 == 1 + gap_tune))
+  # test_2 = vapply(seq_along(train_groups), function(i) {
+  #   unlist(head(tune_sets[[i]], 1) - tail(train_sets[[i]], 1))
+  # }, FUN.VALUE = numeric(1L))
+  # stopifnot(all(test_2 == 1))
+  test_3 = vapply(seq_along(train_groups), function(i) {
+    mondf(
+      tail(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1),
+      head(as.Date(test_groups[[i]], origin = "1970-01-01"), 1)
+    )
+  }, FUN.VALUE = numeric(1L))
+  stopifnot(all(test_3 == 1 + gap_test))
+  # test_4 = vapply(seq_along(train_groups), function(i) {
+  #   unlist(head(test_sets[[i]], 1) - tail(tune_sets[[i]], 1))
+  # }, FUN.VALUE = numeric(1L))
+  # stopifnot(all(test_2 == 1))
+
+  # create inner and outer resamplings
+  custom_inner$instantiate(task, train_sets, tune_sets)
+  inner_sets = lapply(seq_along(train_groups), function(i) {
+    c(train_sets[[i]], tune_sets[[i]])
+  })
+  custom_outer$instantiate(task, inner_sets, test_sets)
+  return(list(custom_inner = custom_inner, custom_outer = custom_outer))
+}
+
+# generate cv's for expanding windows
+custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_week,
+                                                               train_length_start = 6,
+                                                               tune_length = 3,
+                                                               test_length = 3,
+                                                               gap_tune = 0,
+                                                               gap_test = 0)
+custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_month,
+                                                               train_length_start = 6,
+                                                               tune_length = 3,
+                                                               test_length = 3,
+                                                               gap_tune = 1,
+                                                               gap_test = 1)
+custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_month2,
+                                                               train_length_start = 6,
+                                                               tune_length = 3,
+                                                               test_length = 3,
+                                                               gap_tune = 2,
+                                                               gap_test = 2)
+custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_quarter,
+                                                               train_length_start = 6,
+                                                               tune_length = 3,
+                                                               test_length = 3,
+                                                               gap_tune = 3,
+                                                               gap_test = 3)
+
+# test if tain , validation and tst set follow logic
 # lapply(seq_along(custom_cvs), function(i) {
 #   # extract custyom cv
 #   custom_cvs_ = custom_cvs[[i]]
@@ -400,6 +429,46 @@ length(custom_cvs) == nrow(cv_param_grid)
 #   }, FUN.VALUE = logical(1L)))
 #   c(test1, test2)
 # })
+
+# # visualize test
+# prepare_cv_plot = function(x, set = "train") {
+#   x = lapply(x, function(x) data.table(ID = x))
+#   x = rbindlist(x, idcol = "fold")
+#   x[, fold := as.factor(fold)]
+#   x[, set := as.factor(set)]
+#   x[, ID := as.numeric(ID)]
+# }
+# plot_cv = function(cv, n = 5) {
+#   cv_test_inner = cv$custom_inner
+#   cv_test_outer = cv$custom_outer
+#
+#   # define task
+#   if (cv_test_inner$id == "taskRetQuarter") {
+#     task_ = task_ret_quarter$clone()
+#   } else if (cv_test_inner$id == "taskRetMonth2") {
+#     task_ = task_ret_month2$clone()
+#   } else if (cv_test_inner$id == "taskRetMonth") {
+#     task_ = task_ret_month$clone()
+#   } else if (cv_test_inner$id == "taskRetWeek") {
+#     task_ = task_ret_week$clone()
+#   }
+#
+#   # prepare train, tune and test folds
+#   train_sets = cv_test_inner$instance$train[1:n]
+#   train_sets = prepare_cv_plot(train_sets)
+#   tune_sets = cv_test_inner$instance$test[1:n]
+#   tune_sets = prepare_cv_plot(tune_sets, set = "tune")
+#   test_sets = cv_test_outer$instance$test[1:n]
+#   test_sets = prepare_cv_plot(test_sets, set = "test")
+#   dt_vis = rbind(train_sets, tune_sets, test_sets)
+#   ggplot(dt_vis, aes(x = fold, y = ID, color = set)) +
+#     geom_point() +
+#     theme_minimal() +
+#     coord_flip() +
+#     labs(x = "", y = '')
+# }
+# plots = lapply(custom_cvs[c(1, 4, 7, 11, 14)], plot_cv, n = 12)
+# wrap_plots(plots)
 
 
 # ADD PIPELINES -----------------------------------------------------------
@@ -911,7 +980,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   customo_ = rsmp("custom")
   customo_$instantiate(task_, list(cv_outer$train_set(i)), list(cv_outer$test_set(i)))
 
-  # # nested CV for one round
+  # nested CV for one round
   print("Benchmark!")
   design = benchmark_grid(
     tasks = task_, # list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
@@ -936,7 +1005,8 @@ start_time = Sys.time()
 lapply(custom_cvs, function(cv_) {
 
   # debug
-  # cv_ = custom_cvs[[1]]
+  # i = 1
+  # cv_ = custom_cvs[[10]]
 
   # get cv inner object
   cv_inner = cv_$custom_inner
