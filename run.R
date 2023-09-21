@@ -632,7 +632,7 @@ search_space_gbm = search_space_template$clone()
 search_space_gbm$add(
   ps(regr.gbm.distribution      = p_fct(levels = c("gaussian", "tdist")),
      regr.gbm.shrinkage         = p_dbl(lower = 0.001, upper = 0.1),
-     regr.gbm.n.trees           = p_dbl(lower = 50, upper = 200),
+     regr.gbm.n.trees           = p_int(lower = 50, upper = 200),
      regr.gbm.interaction.depth = p_int(lower = 1, upper = 4))
   # ....
 )

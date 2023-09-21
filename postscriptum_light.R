@@ -356,7 +356,7 @@ spy = na.omit(spy)
 plot(spy[, close])
 
 # systemic risk
-task_ = "taskRetMonth"
+task_ = "taskRetWeek"
 sample_ = predictions_dt_ensemble[task == task_]
 sample_ = unique(sample_)
 setorder(sample_, date)
@@ -372,7 +372,7 @@ plot(as.xts.data.table(sample_[, .N, by = date]))
 indicator = sample_[, .(mean_response_agg = mean(mean_response)),
                     by = "date"]
 indicator[, `:=`(
-  mean_response_agg_ema = TTR::EMA(mean_response_agg, 22, na.rm = TRUE)
+  mean_response_agg_ema = TTR::EMA(mean_response_agg, 5, na.rm = TRUE)
 )
 ]
 indicator = indicator[date > as.Date("2017-01-01") & date < as.Date("2023-01-01")]
