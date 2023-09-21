@@ -20,7 +20,7 @@ PortfolioRet = R6::R6Class(
         range = c(0, Inf),
 
         # minimize during tuning?
-        minimize = TRUE
+        minimize = FALSE
       )
     }
   ),
@@ -45,7 +45,7 @@ PortfolioRet = R6::R6Class(
         # calculate portfolio return
         # print(truth_resp)
         # print(weigths_)
-        -sum(truth_resp * weigths_)
+        sum(truth_resp * weigths_)
       }
 
       portfolio_ret_div(prediction$truth, prediction$response)

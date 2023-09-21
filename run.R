@@ -488,6 +488,7 @@ source("PipeOpPCAExplained.R")
 # measures
 source("Linex.R")
 source("AdjLoss2.R")
+source("PortfolioRet.R")
 
 # add my pipes to mlr dictionary
 mlr_pipeops$add("uniformization", PipeOpUniform)
@@ -502,6 +503,7 @@ mlr_filters$add("gausscov_f1st", FilterGausscovF1st)
 mlr_filters$add("gausscov_f3st", FilterGausscovF3st)
 mlr_measures$add("linex", Linex)
 mlr_measures$add("adjloss2", AdjLoss2)
+mlr_measures$add("portfolio_ret", PortfolioRet)
 
 
 # GRAPH V2 ----------------------------------------------------------------
@@ -620,6 +622,22 @@ search_space_xgboost = ps(
   regr.xgboost.nrounds   = p_int(1, 5000)
 )
 
+# gbm graph
+graph_gbm = graph_template %>>%
+  po("learner", learner = lrn("regr.gbm"))
+plot(graph_gbm)
+graph_gbm = as_learner(graph_gbm)
+as.data.table(graph_gbm$param_set)[, .(id, class, lower, upper, levels)]
+search_space_gbm = search_space_template$clone()
+search_space_gbm$add(
+  ps(regr.gbm.distribution      = p_fct(levels = c("gaussian", "tdist")),
+     regr.gbm.shrinkage         = p_dbl(lower = 0.001, upper = 0.1),
+     regr.gbm.n.trees           = p_dbl(lower = 50, upper = 200),
+     regr.gbm.interaction.depth = p_int(lower = 1, upper = 4))
+  # ....
+)
+
+
 # BART graph
 # Error in makeModelMatrixFromDataFrame(x.test, if (!is.null(drop)) drop else TRUE) :
 #   when list, drop must have length equal to x
@@ -737,40 +755,42 @@ search_space_nnet$add(
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
 
+### THIS LEARNER UNSTABLE ####
 # ksvm graph
-graph_ksvm = graph_template %>>%
-  po("learner", learner = lrn("regr.ksvm"), scaled = FALSE)
-graph_ksvm = as_learner(graph_ksvm)
-as.data.table(graph_ksvm$param_set)[, .(id, class, lower, upper, levels)]
-search_space_ksvm = ps(
-  # subsample for hyperband
-  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
-  # preprocessing
-  dropcorr.cutoff = p_fct(
-    levels = c("0.80", "0.90", "0.95", "0.99"),
-    trafo = function(x, param_set) {
-      switch(x,
-             "0.80" = 0.80,
-             "0.90" = 0.90,
-             "0.95" = 0.95,
-             "0.99" = 0.99)
-    }
-  ),
-  # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
-  # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
-  # interaction
-  interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
-  # learner
-  regr.ksvm.kernel  = p_fct(levels = c("rbfdot", "polydot", "vanilladot",
-                                       "laplacedot", "besseldot", "anovadot")),
-  regr.ksvm.C       = p_dbl(lower = 0.0001, upper = 1000, logscale = TRUE),
-  regr.ksvm.degree  = p_int(lower = 1, upper = 5,
-                            depends = regr.ksvm.kernel %in% c("polydot", "besseldot", "anovadot")),
-  regr.ksvm.epsilon = p_dbl(lower = 0.01, upper = 1)
-)
+# graph_ksvm = graph_template %>>%
+#   po("learner", learner = lrn("regr.ksvm"), scaled = FALSE)
+# graph_ksvm = as_learner(graph_ksvm)
+# as.data.table(graph_ksvm$param_set)[, .(id, class, lower, upper, levels)]
+# search_space_ksvm = ps(
+#   # subsample for hyperband
+#   subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+#   # preprocessing
+#   dropcorr.cutoff = p_fct(
+#     levels = c("0.80", "0.90", "0.95", "0.99"),
+#     trafo = function(x, param_set) {
+#       switch(x,
+#              "0.80" = 0.80,
+#              "0.90" = 0.90,
+#              "0.95" = 0.95,
+#              "0.99" = 0.99)
+#     }
+#   ),
+#   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
+#   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+#   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+#   # filters
+#   filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
+#   # interaction
+#   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
+#   # learner
+#   regr.ksvm.kernel  = p_fct(levels = c("rbfdot", "polydot", "vanilladot",
+#                                        "laplacedot", "besseldot", "anovadot")),
+#   regr.ksvm.C       = p_dbl(lower = 0.0001, upper = 1000, logscale = TRUE),
+#   regr.ksvm.degree  = p_int(lower = 1, upper = 5,
+#                             depends = regr.ksvm.kernel %in% c("polydot", "besseldot", "anovadot")),
+#   regr.ksvm.epsilon = p_dbl(lower = 0.01, upper = 1)
+# )
+### THIS LEARNER UNSTABLE ####
 
 # LAST
 # lightgbm graph
@@ -841,11 +861,12 @@ threads = as.integer(Sys.getenv("NCPUS"))
 set_threads(graph_rf, n = threads)
 set_threads(graph_xgboost, n = threads)
 # set_threads(graph_bart, n = threads)
-set_threads(graph_ksvm, n = threads)
+# set_threads(graph_ksvm, n = threads) # unstable
 set_threads(graph_nnet, n = threads)
 set_threads(graph_kknn, n = threads)
 set_threads(graph_lightgbm, n = threads)
 set_threads(graph_earth, n = threads)
+set_threads(graph_gbm, n = threads)
 
 
 # NESTED CV BENCHMARK -----------------------------------------------------
@@ -876,12 +897,15 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
                       list(cv_inner$train_set(i)),
                       list(cv_inner$test_set(i)))
 
+  # objects for all autotuners
+  measure_ = msr("portfolio_ret")
+
   # auto tuner rf
   at_rf = auto_tuner(
     tuner = tnr("hyperband", eta = 5),
     learner = graph_rf,
     resampling = custom_,
-    measure = msr("adjloss2"),
+    measure = measure_,
     search_space = search_space_rf,
     terminator = trm("none")
   )
@@ -891,7 +915,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     tuner = tnr("hyperband", eta = 5),
     learner = graph_xgboost,
     resampling = custom_,
-    measure = msr("adjloss2"),
+    measure = measure_,
     search_space = search_space_xgboost,
     terminator = trm("none")
   )
@@ -901,18 +925,8 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     tuner = tnr("hyperband", eta = 5),
     learner = graph_bart,
     resampling = custom_,
-    measure = msr("adjloss2"),
+    measure = measure_,
     search_space = search_space_bart,
-    terminator = trm("none")
-  )
-
-  # auto tuner ksvm
-  at_ksvm = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
-    learner = graph_ksvm,
-    resampling = custom_,
-    measure = msr("adjloss2"),
-    search_space = search_space_ksvm,
     terminator = trm("none")
   )
 
@@ -921,7 +935,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     tuner = tnr("hyperband", eta = 5),
     learner = graph_nnet,
     resampling = custom_,
-    measure = msr("adjloss2"),
+    measure = measure_,
     search_space = search_space_nnet,
     terminator = trm("none")
   )
@@ -931,7 +945,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     tuner = tnr("hyperband", eta = 5),
     learner = graph_lightgbm,
     resampling = custom_,
-    measure = msr("adjloss2"),
+    measure = measure_,
     search_space = search_space_lightgbm,
     terminator = trm("none")
   )
@@ -941,7 +955,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     tuner = tnr("hyperband", eta = 5),
     learner = graph_earth,
     resampling = custom_,
-    measure = msr("adjloss2"),
+    measure = measure_,
     search_space = search_space_earth,
     terminator = trm("none")
   )
@@ -951,8 +965,18 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     tuner = tnr("hyperband", eta = 5),
     learner = graph_kknn,
     resampling = custom_,
-    measure = msr("adjloss2"),
+    measure = measure_,
     search_space = search_space_kknn,
+    terminator = trm("none")
+  )
+
+  # auto tuner gbm
+  at_gbm = auto_tuner(
+    tuner = tnr("hyperband", eta = 5),
+    learner = graph_gbm,
+    resampling = custom_,
+    measure = measure_,
+    search_space = search_space_gbm,
     terminator = trm("none")
   )
 
@@ -985,7 +1009,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   design = benchmark_grid(
     tasks = task_, # list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
     learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn,
-                    at_ksvm),
+                    at_gbm),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)

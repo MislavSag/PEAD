@@ -128,8 +128,10 @@ rm(list = c("task_ret_week", "task_ret_month", "task_ret_month2", "task_ret_quar
 # measures
 source("Linex.R")
 source("AdjLoss2.R")
+source("PortfolioRet.R")
 mlr_measures$add("linex", Linex)
 mlr_measures$add("adjloss2", AdjLoss2)
+mlr_measures$add("portfolio_ret", PortfolioRet)
 
 
 # RESULTS -----------------------------------------------------------------
@@ -137,7 +139,7 @@ mlr_measures$add("adjloss2", AdjLoss2)
 id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 
 # set files with benchmarks
-bmr_files = list.files(list.files("F:/", pattern = "^H4-v5", full.names = TRUE), full.names = TRUE)
+bmr_files = list.files(list.files("F:/", pattern = "^H4-v6", full.names = TRUE), full.names = TRUE)
 
 # arrange files
 cv_ = as.integer(gsub("\\d+-.*-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
@@ -159,7 +161,7 @@ for (i in 1:nrow(bmr_files)) {
   bmr_dt = as.data.table(bmr)
 
   # aggregate performances
-  agg_ = bmr$aggregate(msrs(c("regr.mse", "regr.mae", "adjloss2", "linex")))
+  agg_ = bmr$aggregate(msrs(c("regr.mse", "regr.mae", "adjloss2", "linex", "portfolio_ret")))
   cols = c("task_id", "learner_id", "iters", colnames(agg_)[7:length(colnames(agg_))])
   agg_ = agg_[, learner_id := gsub(".*regr\\.|\\.tuned", "", learner_id)][, ..cols]
 
@@ -195,20 +197,34 @@ for (i in 1:nrow(bmr_files)) {
 aggregate_results = rbindlist(aggs_l, fill = TRUE)
 cols = colnames(aggregate_results)[4:ncol(aggregate_results)]
 aggregate_results[, lapply(.SD, function(x) mean(x)), by = .(task_id, learner_id), .SDcols = cols]
+aggregate_results[, lapply(.SD, function(x) mean(x)), by = .(task_id, learner_id), .SDcols = cols]
 
-# hit ratio
-# predictions_dt = rbindlist(lapply(bmrs, function(x) x$predictions), idcol = "fold")
+# predictions
 predictions_dt = rbindlist(predictions_l)
 predictions_dt[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign = as.factor(sign(response))
 )]
+
+# accuracy by ids
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv")]
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("task")]
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("learner")]
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task")]
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "learner")]
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
+
+# hit ratio
+# predictions_dt = rbindlist(lapply(bmrs, function(x) x$predictions), idcol = "fold")
 setorderv(predictions_dt, c("cv", "i"))
 predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
 predictions_dt[response > 0.1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
 predictions_dt[response > 0.2, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
 predictions_dt[response > 0.5, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
 predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
+
+# remove ksvm learner, it looks pretty unstable
+predictions_dt = predictions_dt[learner != "ksvm"]
 
 # hit ratio for ensamble
 predictions_dt_ensemble = predictions_dt[, .(mean_response = mean(response),
@@ -340,7 +356,7 @@ spy = na.omit(spy)
 plot(spy[, close])
 
 # systemic risk
-task_ = "taskRetMonth2"
+task_ = "taskRetMonth"
 sample_ = predictions_dt_ensemble[task == task_]
 sample_ = unique(sample_)
 setorder(sample_, date)
@@ -353,25 +369,19 @@ sample_[, max(date)]
 # sample_ = sample_[date < as.Date("2018-02-01")]
 plot(as.xts.data.table(sample_[, .N, by = date]))
 
-indicator = sample_[, .(response_sign_sign_net_agg = sum(response_sign_sign_net9),
-                        response_sign_sign_neg_agg = sum(response_sign_sign_neg9),
-                        mean_response_agg = sum(mean_response)),
+indicator = sample_[, .(mean_response_agg = mean(mean_response)),
                     by = "date"]
 indicator[, `:=`(
-  response_sign_sign_net_agg = TTR::EMA(response_sign_sign_net_agg, 5, na.rm = TRUE),
-  response_sign_sign_neg_agg = TTR::EMA(response_sign_sign_neg_agg, 5, na.rm = TRUE),
-  mean_response_agg = TTR::EMA(mean_response_agg, 5, na.rm = TRUE)
+  mean_response_agg_ema = TTR::EMA(mean_response_agg, 22, na.rm = TRUE)
 )
 ]
 indicator = indicator[date > as.Date("2017-01-01") & date < as.Date("2023-01-01")]
-plot(as.xts.data.table(indicator)[, 1])
-plot(as.xts.data.table(indicator)[, 2])
-plot(as.xts.data.table(indicator)[, 3])
+plot(as.xts.data.table(indicator))
 
-backtest_data =  merge(spy, indicator, by = "date")
+backtest_data =  merge(spy, indicator, by = "date", all.x = TRUE, all.y = FALSE)
 backtest_data = na.omit(backtest_data)
 backtest_data[, signal := 1]
-backtest_data[shift(mean_response_agg) < -5, signal := 0]
+backtest_data[shift(mean_response_agg_ema) < 0, signal := 0]
 backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1))])
 PerformanceAnalytics::charts.PerformanceSummary(backtest_data_xts)
 # backtest performance
