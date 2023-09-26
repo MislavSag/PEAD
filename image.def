@@ -39,6 +39,7 @@ From: r-base:4.3.0
   R --slave -e 'install.packages("kknn")'
   R --slave -e 'install.packages("kernlab")'
   R --slave -e 'install.packages("gbm")'
+  R --slave -e 'install.packages("rsm")'
   R --slave -e 'install.packages("torch")'
   R --slave -e 'remotes::install_github("mlr-org/mlr3torch")'
   # R --slave -e 'remotes::install_url("https://github.com/catboost/catboost/releases/download/v1.2.1/catboost-R-Linux-1.2.1.tgz", build_opts = c("--no-multiarch", "--no-test-load"))'

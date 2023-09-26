@@ -268,14 +268,14 @@ for (i in 1:nrow(cv_param_grid)) {
     custom_cvs[[i]] = nested_cv_split(task_ret_week,
                                       param_$train,
                                       param_$tune,
-                                      2,
+                                      1,
                                       param_$gap+1,
                                       param_$gap+1)
   } else if (param_$gap == 1) {
     custom_cvs[[i]] = nested_cv_split(task_ret_month,
                                       param_$train,
                                       param_$tune,
-                                      2,
+                                      1,
                                       param_$gap,
                                       param_$gap)
 
@@ -283,7 +283,7 @@ for (i in 1:nrow(cv_param_grid)) {
     custom_cvs[[i]] = nested_cv_split(task_ret_month2,
                                       param_$train,
                                       param_$tune,
-                                      2,
+                                      1,
                                       param_$gap,
                                       param_$gap)
 
@@ -291,7 +291,7 @@ for (i in 1:nrow(cv_param_grid)) {
     custom_cvs[[i]] = nested_cv_split(task_ret_quarter,
                                       param_$train,
                                       param_$tune,
-                                      2,
+                                      1,
                                       param_$gap,
                                       param_$gap)
 
@@ -305,7 +305,7 @@ length(custom_cvs) == nrow(cv_param_grid)
 nested_cv_split_expanding = function(task,
                                      train_length_start = 6,
                                      tune_length = 3,
-                                     test_length = 3,
+                                     test_length = 1,
                                      gap_tune = 1,
                                      gap_test = 1,
                                      id = task$id) {
@@ -388,25 +388,25 @@ nested_cv_split_expanding = function(task,
 custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_week,
                                                                train_length_start = 6,
                                                                tune_length = 3,
-                                                               test_length = 3,
+                                                               test_length = 1,
                                                                gap_tune = 0,
                                                                gap_test = 0)
 custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_month,
                                                                train_length_start = 6,
                                                                tune_length = 3,
-                                                               test_length = 3,
+                                                               test_length = 1,
                                                                gap_tune = 1,
                                                                gap_test = 1)
 custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_month2,
                                                                train_length_start = 6,
                                                                tune_length = 3,
-                                                               test_length = 3,
+                                                               test_length = 1,
                                                                gap_tune = 2,
                                                                gap_test = 2)
 custom_cvs[[length(custom_cvs)+1]] = nested_cv_split_expanding(task_ret_quarter,
                                                                train_length_start = 6,
                                                                tune_length = 3,
-                                                               test_length = 3,
+                                                               test_length = 1,
                                                                gap_tune = 3,
                                                                gap_test = 3)
 
@@ -637,6 +637,16 @@ search_space_gbm$add(
   # ....
 )
 
+# rsm graph
+graph_rsm = graph_template %>>%
+  po("learner", learner = lrn("regr.rsm"))
+plot(graph_rsm)
+graph_rsm = as_learner(graph_rsm)
+as.data.table(graph_rsm$param_set)[, .(id, class, lower, upper, levels)]
+search_space_rsm = search_space_template$clone()
+search_space_rsm$add(
+  ps(regr.rsm.modelfun = p_fct(levels = c("FO", "TWI", "SO")))
+)
 
 # BART graph
 # Error in makeModelMatrixFromDataFrame(x.test, if (!is.null(drop)) drop else TRUE) :
@@ -867,6 +877,7 @@ set_threads(graph_kknn, n = threads)
 set_threads(graph_lightgbm, n = threads)
 set_threads(graph_earth, n = threads)
 set_threads(graph_gbm, n = threads)
+set_threads(graph_rsm, n = threads)
 
 
 # NESTED CV BENCHMARK -----------------------------------------------------
@@ -980,6 +991,16 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
     terminator = trm("none")
   )
 
+  # auto tuner rsm
+  at_rsm = auto_tuner(
+    tuner = tnr("hyperband", eta = 5),
+    learner = graph_rsm,
+    resampling = custom_,
+    measure = measure_,
+    search_space = search_space_rsm,
+    terminator = trm("none")
+  )
+
   # # auto tuner mboost
   # at_gamboost = auto_tuner(
   #   tuner = tnr("hyperband", eta = 5),
@@ -1009,7 +1030,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   design = benchmark_grid(
     tasks = task_, # list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
     learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn,
-                    at_gbm),
+                    at_gbm, at_rsm),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
@@ -1046,3 +1067,7 @@ lapply(custom_cvs, function(cv_) {
 
   nested_cv_benchmark(i, cv_inner, cv_outer)
 })
+
+# # test
+# bmr = readRDS("H4-jobarray-/12-taskRetQuarter-93-20230926154703.rds")
+# bmr$aggregate(msrs(c("regr.mse", "regr.mae", "portfolio_ret")))

@@ -139,7 +139,7 @@ mlr_measures$add("portfolio_ret", PortfolioRet)
 id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 
 # set files with benchmarks
-bmr_files = list.files(list.files("F:/", pattern = "^H4-v6", full.names = TRUE), full.names = TRUE)
+bmr_files = list.files(list.files("F:/", pattern = "^H4-v7", full.names = TRUE), full.names = TRUE)
 
 # arrange files
 cv_ = as.integer(gsub("\\d+-.*-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
@@ -212,16 +212,16 @@ predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("task")]
 predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("learner")]
 predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task")]
 predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "learner")]
-predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
 
 # hit ratio
 # predictions_dt = rbindlist(lapply(bmrs, function(x) x$predictions), idcol = "fold")
 setorderv(predictions_dt, c("cv", "i"))
-predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
-predictions_dt[response > 0.1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
-predictions_dt[response > 0.2, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
-predictions_dt[response > 0.5, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
-predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")]
+predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
+predictions_dt[response > 0.1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
+predictions_dt[response > 0.2, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
+predictions_dt[response > 0.5, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
+predictions_dt[response > 1, mlr3measures::acc(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
 
 # remove ksvm learner, it looks pretty unstable
 predictions_dt = predictions_dt[learner != "ksvm"]
@@ -256,7 +256,7 @@ predictions_dt_ensemble[, lapply(.SD, function(x) sum(x == TRUE)), .SDcols = col
 
 # check only sign ensamble performance
 res = lapply(cols_sign_response_pos, function(x) {
-  predictions_dt_ensemble[get(x) == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = "task"]
+  predictions_dt_ensemble[get(x) == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
 })
 names(res) = cols_sign_response_pos
 res
@@ -372,14 +372,14 @@ plot(as.xts.data.table(sample_[, .N, by = date]))
 indicator = sample_[, .(mean_response_agg = mean(mean_response)),
                     by = "date"]
 indicator[, `:=`(
-  mean_response_agg_ema = TTR::EMA(mean_response_agg, 5, na.rm = TRUE)
+  mean_response_agg_ema = TTR::EMA(mean_response_agg, 10, na.rm = TRUE)
 )
 ]
 indicator = indicator[date > as.Date("2017-01-01") & date < as.Date("2023-01-01")]
 plot(as.xts.data.table(indicator))
 
 backtest_data =  merge(spy, indicator, by = "date", all.x = TRUE, all.y = FALSE)
-backtest_data = na.omit(backtest_data)
+backtest_data = backtest_data[date > indicator[, min(date)]]
 backtest_data[, signal := 1]
 backtest_data[shift(mean_response_agg_ema) < 0, signal := 0]
 backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1))])
