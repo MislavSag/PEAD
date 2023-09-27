@@ -1036,9 +1036,9 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = task_, # list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rsm),
-    # learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn,
-    #                 at_gbm, at_rsm),
+    # learners = list(at_rsm),
+    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn,
+                    at_gbm, at_rsm),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
@@ -1058,7 +1058,7 @@ start_time = Sys.time()
 lapply(custom_cvs, function(cv_) {
 
   # debug
-  # i = 1
+  # i = 60
   # cv_ = custom_cvs[[3]]
 
   # get cv inner object
