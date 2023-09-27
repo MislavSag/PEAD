@@ -637,17 +637,6 @@ search_space_gbm$add(
   # ....
 )
 
-# rsm graph
-graph_rsm = graph_template %>>%
-  po("learner", learner = lrn("regr.rsm"))
-plot(graph_rsm)
-graph_rsm = as_learner(graph_rsm)
-as.data.table(graph_rsm$param_set)[, .(id, class, lower, upper, levels)]
-search_space_rsm = search_space_template$clone()
-search_space_rsm$add(
-  ps(regr.rsm.modelfun = p_fct(levels = c("FO", "TWI", "SO")))
-)
-
 # BART graph
 # Error in makeModelMatrixFromDataFrame(x.test, if (!is.null(drop)) drop else TRUE) :
 #   when list, drop must have length equal to x
@@ -866,6 +855,24 @@ search_space_earth$add(
      regr.earth.nk      = p_int(lower = 50, upper = 250))
 )
 
+# rsm graph
+graph_rsm = graph_template %>>%
+  po("learner", learner = lrn("regr.rsm"))
+plot(graph_rsm)
+graph_rsm = as_learner(graph_rsm)
+as.data.table(graph_rsm$param_set)[, .(id, class, lower, upper, levels)]
+search_space_rsm = search_space_template$clone()
+search_space_rsm$add(
+  ps(regr.rsm.modelfun = p_fct(levels = c("FO", "TWI", "SO")))
+)
+# Error in fo[, i] * fo[, j] : non-numeric argument to binary operator
+# This happened PipeOp regr.rsm's $train()
+# Calls: lapply ... resolve.list -> signalConditionsASAP -> signalConditions
+# In addition: Warning message:
+# In bbandsDn5:volumeDownUpRatio :
+#   numerical expression has 4076 elements: only the first used
+# This happened PipeOp regr.rsm's $train()
+
 # threads
 threads = as.integer(Sys.getenv("NCPUS"))
 set_threads(graph_rf, n = threads)
@@ -1029,8 +1036,9 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = task_, # list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn,
-                    at_gbm, at_rsm),
+    learners = list(at_rsm),
+    # learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn,
+    #                 at_gbm, at_rsm),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
@@ -1051,7 +1059,7 @@ lapply(custom_cvs, function(cv_) {
 
   # debug
   # i = 1
-  # cv_ = custom_cvs[[10]]
+  # cv_ = custom_cvs[[3]]
 
   # get cv inner object
   cv_inner = cv_$custom_inner
