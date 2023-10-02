@@ -142,10 +142,14 @@ id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 bmr_files = list.files(list.files("F:/", pattern = "^H4-v7", full.names = TRUE), full.names = TRUE)
 
 # arrange files
-cv_ = as.integer(gsub("\\d+-.*-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
-i_ = as.integer(gsub("-.*-\\d+", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
-bmr_files = cbind.data.frame(bmr_files, cv = cv_, i = i_)
-setorder(bmr_files, cv, i)
+cv_   = as.integer(gsub("\\d+-.*-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
+i_    = as.integer(gsub("-.*-\\d+", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
+task_ = gsub(".*/\\d+-|-\\d+-\\d+.rds", "", bmr_files)
+bmr_files = cbind.data.frame(bmr_files, task = task_, cv = cv_, i = i_)
+setorder(bmr_files, task, cv, i)
+bmr_files[bmr_files$task == "taskRetWeek",]
+bmr_files[bmr_files$task == "taskRetMonth",]
+bmr_files[bmr_files$task == "taskRetMonth2",]
 
 # extract needed information from banchmark objects
 predictions_l = list()
@@ -193,18 +197,27 @@ for (i in 1:nrow(bmr_files)) {
   aggs_l[[i]] = agg_
 }
 
+# checks
+na_test = vapply(aggs_l, function(x) any(is.na(x)), FUN.VALUE = logical(1))
+which(na_test)
+aggs_l_naomit = aggs_l[-which(na_test)]
+
 # aggregated results
-aggregate_results = rbindlist(aggs_l, fill = TRUE)
+aggregate_results = rbindlist(aggs_l_naomit, fill = TRUE)
 cols = colnames(aggregate_results)[4:ncol(aggregate_results)]
-aggregate_results[, lapply(.SD, function(x) mean(x)), by = .(task_id, learner_id), .SDcols = cols]
 aggregate_results[, lapply(.SD, function(x) mean(x)), by = .(task_id, learner_id), .SDcols = cols]
 
 # predictions
-predictions_dt = rbindlist(predictions_l)
+predictions_l_naomit = predictions_l[-which(na_test)]
+predictions_dt = rbindlist(predictions_l_naomit)
 predictions_dt[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign = as.factor(sign(response))
 )]
+
+# number of predictions by task and cv
+unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task")]
+unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task", "cv")]
 
 # accuracy by ids
 predictions_dt[, mlr3measures::acc(truth_sign, response_sign), by = c("cv")]
@@ -244,9 +257,9 @@ predictions_dt_ensemble[, `:=`(
   # response_sign_sign_pos = sign_response > 15,
   # response_sign_sign_neg = sign_response < -15
 )]
-predictions_dt_ensemble = unique(predictions_dt_ensemble)
+predictions_dt_ensemble = unique(predictions_dt_ensemble, by = c("task", "row_ids"))
 sign_response_max = predictions_dt_ensemble[, max(sign_response)]
-sign_response_seq = seq(as.integer(sign_response_max / 2)-3, sign_response_max - 1)
+sign_response_seq = seq(as.integer(sign_response_max / 2), sign_response_max - 1)
 cols_sign_response_pos = paste0("response_sign_sign_pos", sign_response_seq)
 predictions_dt_ensemble[, (cols_sign_response_pos) := lapply(sign_response_seq, function(x) sign_response > x)]
 cols_sign_response_neg = paste0("response_sign_sign_neg", sign_response_seq)
@@ -293,7 +306,7 @@ res
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
 lapply(unique(predictions_dt_ensemble$task), function(x) {
   # debug
-  # x = "taskRetMonth"
+  # x = "taskRetWeek"
 
   # prepare data
   y = predictions_dt_ensemble[task == x]
@@ -303,7 +316,11 @@ lapply(unique(predictions_dt_ensemble$task), function(x) {
   y = unique(y)
 
   # remove where all false
-  y = y[response_sign_sign_pos9 == TRUE]
+  y = y[response_sign_sign_pos16 == TRUE]
+
+  # min and max date
+  y[, min(date)]
+  y[, max(date)]
 
   # by date
   # cols_ = setdiff(cols, "date")
@@ -366,22 +383,24 @@ new_dt = sample_[, ..pos_cols] - sample_[, ..neg_cols]
 setnames(new_dt, gsub("pos", "net", pos_cols))
 sample_ = cbind(sample_, new_dt)
 sample_[, max(date)]
-# sample_ = sample_[date < as.Date("2018-02-01")]
+sample_ = sample_[date < sample_[, max(date)]]
+sample_ = sample_[date > sample_[, min(date)]]
 plot(as.xts.data.table(sample_[, .N, by = date]))
 
-indicator = sample_[, .(mean_response_agg = mean(mean_response)),
-                    by = "date"]
-indicator[, `:=`(
-  mean_response_agg_ema = TTR::EMA(mean_response_agg, 10, na.rm = TRUE)
-)
-]
-indicator = indicator[date > as.Date("2017-01-01") & date < as.Date("2023-01-01")]
+# calculate indicator
+indicator = sample_[, .(ind = median(median_response)), by = "date"]
+indicator[, ind_ema := TTR::EMA(ind, 5, na.rm = TRUE)]
+indicator = na.omit(indicator)
 plot(as.xts.data.table(indicator))
+plot(as.xts.data.table(indicator)[, 2])
 
+# create backtest data
 backtest_data =  merge(spy, indicator, by = "date", all.x = TRUE, all.y = FALSE)
 backtest_data = backtest_data[date > indicator[, min(date)]]
+backtest_data = backtest_data[date < indicator[, max(date)]]
 backtest_data[, signal := 1]
-backtest_data[shift(mean_response_agg_ema) < 0, signal := 0]
+backtest_data[shift(ind_ema) < 0, signal := 0]          # 1
+# backtest_data[shift(diff(mean_response_agg_ema, 5)) < -0.01, signal := 0] # 2
 backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1))])
 PerformanceAnalytics::charts.PerformanceSummary(backtest_data_xts)
 # backtest performance
@@ -403,3 +422,49 @@ Performance <- function(x) {
 }
 Performance(backtest_data_xts[, 1])
 Performance(backtest_data_xts[, 2])
+
+# analyse indicator
+library(forecast)
+ndiffs(as.xts.data.table(indicator)[, 1])
+plot(diff(as.xts.data.table(indicator)[, 1]))
+
+
+
+# MOVE THIS TO SOME OTHER PACKAGE -----------------------------------------
+# rolling var predictions
+library(runner)
+library(vars)
+library(tsDyn)
+
+# prepare dependent and independent vars in matrix form
+input_var = as.xts.data.table(backtest_data[, .(date, returns, ind)])
+input_var[, "ind"] = na.locf(input_var[, "ind"])
+
+# stat test
+ndiffs(input_var[, "ind"])
+input_var[, "ind"] = diff(input_var[, "ind"])
+input_var = na.omit(input_var)
+
+# var test
+var <- VAR(input_var, p=5, type="const")
+summary(var)
+
+# TVAR test
+tvar = TVAR(
+  data = input_var,
+  lag = 1,       # Number of lags to include in each regime
+  model = "TAR", # Whether the transition variable is taken in levels (TAR) or difference (MTAR)
+  nthresh = 2,   # Number of thresholds
+  thDelay = 1,   # 'time delay' for the threshold variable
+  trim = 0.05,   # trimming parameter indicating the minimal percentage of observations in each regime
+  mTh = 2,       # combination of variables with same lag order for the transition variable. Either a single value (indicating which variable to take) or a combination
+  plot = FALSE
+)
+summary(tvar)
+
+# var predictions
+runner(
+
+)
+
+
