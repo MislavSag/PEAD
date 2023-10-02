@@ -433,45 +433,45 @@ nested_cv_split_expanding = function(task,
 #   c(test1, test2)
 # })
 
-# visualize test
-prepare_cv_plot = function(x, set = "train") {
-  x = lapply(x, function(x) data.table(ID = x))
-  x = rbindlist(x, idcol = "fold")
-  x[, fold := as.factor(fold)]
-  x[, set := as.factor(set)]
-  x[, ID := as.numeric(ID)]
-}
-plot_cv = function(cv, n = 5) {
-  cv_test_inner = cv$custom_inner
-  cv_test_outer = cv$custom_outer
-
-  # define task
-  if (cv_test_inner$id == "taskRetQuarter") {
-    task_ = task_ret_quarter$clone()
-  } else if (cv_test_inner$id == "taskRetMonth2") {
-    task_ = task_ret_month2$clone()
-  } else if (cv_test_inner$id == "taskRetMonth") {
-    task_ = task_ret_month$clone()
-  } else if (cv_test_inner$id == "taskRetWeek") {
-    task_ = task_ret_week$clone()
-  }
-
-  # prepare train, tune and test folds
-  train_sets = cv_test_inner$instance$train[1:n]
-  train_sets = prepare_cv_plot(train_sets)
-  tune_sets = cv_test_inner$instance$test[1:n]
-  tune_sets = prepare_cv_plot(tune_sets, set = "tune")
-  test_sets = cv_test_outer$instance$test[1:n]
-  test_sets = prepare_cv_plot(test_sets, set = "test")
-  dt_vis = rbind(train_sets, tune_sets, test_sets)
-  ggplot(dt_vis, aes(x = fold, y = ID, color = set)) +
-    geom_point() +
-    theme_minimal() +
-    coord_flip() +
-    labs(x = "", y = '', title = cv_test_inner$id)
-}
-plots = lapply(custom_cvs[c(1, 4, 7, 11)], plot_cv, n = 12)
-wrap_plots(plots)
+# # visualize test
+# prepare_cv_plot = function(x, set = "train") {
+#   x = lapply(x, function(x) data.table(ID = x))
+#   x = rbindlist(x, idcol = "fold")
+#   x[, fold := as.factor(fold)]
+#   x[, set := as.factor(set)]
+#   x[, ID := as.numeric(ID)]
+# }
+# plot_cv = function(cv, n = 5) {
+#   cv_test_inner = cv$custom_inner
+#   cv_test_outer = cv$custom_outer
+#
+#   # define task
+#   if (cv_test_inner$id == "taskRetQuarter") {
+#     task_ = task_ret_quarter$clone()
+#   } else if (cv_test_inner$id == "taskRetMonth2") {
+#     task_ = task_ret_month2$clone()
+#   } else if (cv_test_inner$id == "taskRetMonth") {
+#     task_ = task_ret_month$clone()
+#   } else if (cv_test_inner$id == "taskRetWeek") {
+#     task_ = task_ret_week$clone()
+#   }
+#
+#   # prepare train, tune and test folds
+#   train_sets = cv_test_inner$instance$train[1:n]
+#   train_sets = prepare_cv_plot(train_sets)
+#   tune_sets = cv_test_inner$instance$test[1:n]
+#   tune_sets = prepare_cv_plot(tune_sets, set = "tune")
+#   test_sets = cv_test_outer$instance$test[1:n]
+#   test_sets = prepare_cv_plot(test_sets, set = "test")
+#   dt_vis = rbind(train_sets, tune_sets, test_sets)
+#   ggplot(dt_vis, aes(x = fold, y = ID, color = set)) +
+#     geom_point() +
+#     theme_minimal() +
+#     coord_flip() +
+#     labs(x = "", y = '', title = cv_test_inner$id)
+# }
+# plots = lapply(custom_cvs[c(1, 4, 7, 11)], plot_cv, n = 12)
+# wrap_plots(plots)
 
 
 # ADD PIPELINES -----------------------------------------------------------
