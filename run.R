@@ -543,7 +543,8 @@ graph_template =
   po("branch", options = c("jmi", "relief", "gausscov"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
               po("filter", filter = flt("relief"), filter.frac = 0.05),
-              po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0))) %>>%
+              po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0)
+              )) %>>%
   # po("nop", id = "nop_filter"))) %>>%
   po("unbranch", id = "filter_unbranch") %>>%
   # modelmatrix
@@ -788,7 +789,8 @@ graph_template =
   po("branch", options = c("jmi", "relief", "gausscov"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
               po("filter", filter = flt("relief"), filter.frac = 0.05),
-              po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0))) %>>%
+              po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0)
+              )) %>>%
   po("unbranch", id = "filter_unbranch")
 search_space_template = ps(
   # subsample for hyperband
@@ -1050,9 +1052,9 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
   print("Benchmark!")
   design = benchmark_grid(
     tasks = task_, # list(task_ret_week, task_ret_month, task_ret_month2, task_ret_quarter),
-    # learners = list(at_bart),
-    learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn,
-                    at_gbm, at_rsm, at_bart),
+    learners = list(at_rf),
+    # learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth, at_kknn,
+    #                 at_gbm, at_rsm, at_bart),
     resamplings = customo_
   )
   bmr = benchmark(design, store_models = FALSE, store_backends = FALSE)
@@ -1077,8 +1079,8 @@ start_time = Sys.time()
 lapply(custom_cvs, function(cv_) {
 
   # debug
-  # i = 50
-  # cv_ = custom_cvs[[12]]
+  # i = 41
+  # cv_ = custom_cvs[[11]]
 
   # get cv inner object
   cv_inner = cv_$custom_inner

@@ -66,6 +66,18 @@ FilterGausscovF3st = R6::R6Class(
       res_index  <- res_index [res_index  != 0]
 
       scores[res_index] = 1
+
+      # save scores
+      dir_name = "./gausscov_f3"
+      if (!dir.exists(dir_name)) {
+        dir.create(dir_name)
+      }
+      random_id <- paste0(sample(0:9, 15, replace = TRUE), collapse = "")
+      file_name = paste0("gausscov_f3-", task$id, "-", random_id, ".rds")
+      file_name = file.path(dir_name, file_name)
+      saveRDS(scores, file_name)
+
+      # return scores
       sort(scores, decreasing = TRUE)
     }
   )

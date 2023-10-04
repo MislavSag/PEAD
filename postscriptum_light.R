@@ -389,7 +389,7 @@ plot(as.xts.data.table(sample_[, .N, by = date]))
 
 # calculate indicator
 indicator = sample_[, .(ind = median(median_response)), by = "date"]
-indicator[, ind_ema := TTR::EMA(ind, 5, na.rm = TRUE)]
+indicator[, ind_ema := TTR::EMA(ind, 10, na.rm = TRUE)]
 indicator = na.omit(indicator)
 plot(as.xts.data.table(indicator))
 plot(as.xts.data.table(indicator)[, 2])
@@ -461,10 +461,3 @@ tvar = TVAR(
   plot = FALSE
 )
 summary(tvar)
-
-# var predictions
-runner(
-
-)
-
-
