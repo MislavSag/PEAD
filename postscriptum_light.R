@@ -134,12 +134,38 @@ mlr_measures$add("adjloss2", AdjLoss2)
 mlr_measures$add("portfolio_ret", PortfolioRet)
 
 
+
+# GAUSSCOV ----------------------------------------------------------------
+# files
+gausscov_files = list.files(list.files("F:/", pattern = "^H4-v8-gauss", full.names = TRUE), full.names = TRUE)
+
+# arrange files
+task_ = gsub(".*f3-|-\\d+.rds", "", gausscov_files)
+gausscov_files = cbind.data.frame(gausscov_files, task = task_)
+setorder(gausscov_files, task)
+gausscov_files[gausscov_files$task == "taskRetWeek",]
+gausscov_files[gausscov_files$task == "taskRetMonth",]
+gausscov_files[gausscov_files$task == "taskRetMonth2",]
+
+# import gausscov vars
+gausscov_l = lapply(gausscov_files[, "gausscov_files"], readRDS)
+gausscov = lapply(gausscov_l, function(x) x[x > 0])
+names(gausscov) = gausscov_files[, "task"]
+gausscov = lapply(gausscov, function(x) as.data.frame(as.list(x)))
+gausscov = lapply(gausscov, melt)
+gausscov = rbindlist(gausscov, idcol = "task")
+
+# most important vars across all tasks
+gausscov[, sum(value), by = variable][order(V1)][, tail(.SD, 10)]
+gausscov[, sum(value), by = .(task, variable)][order(V1)][, tail(.SD, 5), by = task]
+
+
 # RESULTS -----------------------------------------------------------------
 # utils
 id_cols = c("symbol", "date", "yearmonthid", "..row_id")
 
 # set files with benchmarks
-bmr_files = list.files(list.files("F:/", pattern = "^H4-v7", full.names = TRUE), full.names = TRUE)
+bmr_files = list.files("F:/H4-v8", full.names = TRUE)
 
 # arrange files
 cv_   = as.integer(gsub("\\d+-.*-", "", gsub(".*/|-\\d+.rds", "", bmr_files)))
