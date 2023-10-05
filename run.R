@@ -878,7 +878,6 @@ search_space_bart$add(
 # burn = p_int(lower = 10, upper = 100),
 # iter = p_int(lower = 100, upper = 1000)
 
-
 # threads
 threads = as.integer(Sys.getenv("NCPUS"))
 set_threads(graph_rf, n = threads)
@@ -923,10 +922,13 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # objects for all autotuners
   measure_ = msr("portfolio_ret")
+  tuner_   = tnr("hyperband", eta = 4)
+  # tuner_   = tnr("mbo")
+  # term_evals = 50
 
   # auto tuner rf
   at_rf = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_rf,
     resampling = custom_,
     measure = measure_,
@@ -936,7 +938,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # auto tuner xgboost
   at_xgboost = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_xgboost,
     resampling = custom_,
     measure = measure_,
@@ -946,7 +948,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # auto tuner BART
   at_bart = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_bart,
     resampling = custom_,
     measure = measure_,
@@ -956,7 +958,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # auto tuner nnet
   at_nnet = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_nnet,
     resampling = custom_,
     measure = measure_,
@@ -966,7 +968,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # auto tuner lightgbm
   at_lightgbm = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_lightgbm,
     resampling = custom_,
     measure = measure_,
@@ -976,7 +978,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # auto tuner earth
   at_earth = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_earth,
     resampling = custom_,
     measure = measure_,
@@ -986,7 +988,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # auto tuner kknn
   at_kknn = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_kknn,
     resampling = custom_,
     measure = measure_,
@@ -996,7 +998,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # auto tuner gbm
   at_gbm = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_gbm,
     resampling = custom_,
     measure = measure_,
@@ -1006,7 +1008,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # auto tuner rsm
   at_rsm = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_rsm,
     resampling = custom_,
     measure = measure_,
@@ -1016,7 +1018,7 @@ nested_cv_benchmark <- function(i, cv_inner, cv_outer) {
 
   # auto tuner rsm
   at_bart = auto_tuner(
-    tuner = tnr("hyperband", eta = 5),
+    tuner = tuner_,
     learner = graph_bart,
     resampling = custom_,
     measure = measure_,
