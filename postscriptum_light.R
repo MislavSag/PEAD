@@ -300,6 +300,13 @@ res = lapply(cols_sign_response_pos, function(x) {
 names(res) = cols_sign_response_pos
 res
 
+# check only sign ensamble performance all
+res = lapply(cols_sign_response_pos, function(x) {
+  predictions_dt_ensemble[get(x) == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1)))]
+})
+names(res) = cols_sign_response_pos
+res
+
 # predictions_dt_ensemble[, response_sign_sd_q := quantile(sd_response, probs = 0.05), by = "task"]
 # predictions_dt_ensemble[, mfd := as.factor(ifelse(sd_response < response_sign_sd_q, 1, -1))] # machine forecast dissagreement
 #
