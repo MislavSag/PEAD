@@ -49,7 +49,7 @@ writeRDS = function (object, file, compress = "gzip") {
 }
 
 # load registry
-reg = loadRegistry("experiments-20231010105335")
+reg = loadRegistry("experiments")
 
 # create job collection
 resources = list(ncpus = 4) # this shouldnt be important
