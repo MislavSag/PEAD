@@ -14,6 +14,7 @@ library(mlr3batchmark)
 library(checkmate)
 library(stringi)
 library(fs)
+library(R6)
 
 
 # utils

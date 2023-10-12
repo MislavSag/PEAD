@@ -815,6 +815,7 @@ designs_l = lapply(custom_cvs, function(cv_) {
 
     # inner resampling
     custom_ = rsmp("custom")
+    custom_$id = paste0("custom_", cv_inner$iters, "_", i)
     custom_$instantiate(task_ret_week,
                         list(cv_inner$train_set(i)),
                         list(cv_inner$test_set(i)))
@@ -845,19 +846,100 @@ designs_l = lapply(custom_cvs, function(cv_) {
       terminator = trm("none")
     )
 
+    # auto tuner BART
+    at_bart = auto_tuner(
+      tuner = tuner_,
+      learner = graph_bart,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_bart,
+      terminator = trm("none")
+    )
+
+    # auto tuner nnet
+    at_nnet = auto_tuner(
+      tuner = tuner_,
+      learner = graph_nnet,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_nnet,
+      terminator = trm("none")
+    )
+
+    # auto tuner lightgbm
+    at_lightgbm = auto_tuner(
+      tuner = tuner_,
+      learner = graph_lightgbm,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_lightgbm,
+      terminator = trm("none")
+    )
+
+    # auto tuner earth
+    at_earth = auto_tuner(
+      tuner = tuner_,
+      learner = graph_earth,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_earth,
+      terminator = trm("none")
+    )
+
+    # auto tuner kknn
+    at_kknn = auto_tuner(
+      tuner = tuner_,
+      learner = graph_kknn,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_kknn,
+      terminator = trm("none")
+    )
+
+    # auto tuner gbm
+    at_gbm = auto_tuner(
+      tuner = tuner_,
+      learner = graph_gbm,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_gbm,
+      terminator = trm("none")
+    )
+
+    # auto tuner rsm
+    at_rsm = auto_tuner(
+      tuner = tuner_,
+      learner = graph_rsm,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_rsm,
+      terminator = trm("none")
+    )
+
+    # auto tuner rsm
+    at_bart = auto_tuner(
+      tuner = tuner_,
+      learner = graph_bart,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_bart,
+      terminator = trm("none")
+    )
+
     # outer resampling
     customo_ = rsmp("custom")
+    customo_$id = paste0("custom_", cv_inner$iters, "_", i)
     customo_$instantiate(task_, list(cv_outer$train_set(i)), list(cv_outer$test_set(i)))
 
     # nested CV for one round
     design = benchmark_grid(
       tasks = task_,
-      learners = list(at_rf, at_xgboost),
+      learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth,
+                      at_kknn, at_gbm, at_rsm, at_bart),
       resamplings = customo_
     )
   })
   designs_cv = do.call(rbind, designs_cv_l)
-  # batchmark(designs)
 })
 designs = do.call(rbind, designs_l)
 
