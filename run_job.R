@@ -127,6 +127,8 @@ update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_ch
 job = batchtools:::getJob(jc, i)
 id = job$id
 
+cat("CHANGE JOB ID MANNUALY", nrow(jc$jobs), "!!!")
+
 # execute job
 gc(reset = TRUE)
 update$started = batchtools:::ustamp()
