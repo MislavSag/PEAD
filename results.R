@@ -1,18 +1,14 @@
 library(fs)
 library(data.table)
 library(mlr3batchmark)
+library(batchtools)
 
 
 # load registry
 reg = loadRegistry("F:/H4-v9", work.dir="F:/H4-v9")
 
-# add status values mannually - it will trow error below if there is no staus
-ids_ = as.integer(fs::path_ext_remove(fs::path_file(dir_ls(fs::path(reg$file.dir, "results")))))
-setdiff(reg$status$job.id, ids_)
-reg$status[job.id %in% ids_, done := batchtools:::ustamp()]
-
 # predictions
-bmrs = reduceResultsBatchmark(ids = ids_, store_backends = FALSE, reg = reg)
+bmrs = reduceResultsBatchmark(store_backends = FALSE, reg = reg)
 bmrs_dt = as.data.table(bmrs)
 
 # get predictions

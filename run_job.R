@@ -15,9 +15,12 @@ library(checkmate)
 library(stringi)
 library(fs)
 library(R6)
+library(brew)
 
 
-# utils
+
+# UTILS -------------------------------------------------------------------
+# utils functions
 dir = function(reg, what) {
   fs::path(fs::path_expand(reg$file.dir), what)
 }
@@ -48,29 +51,6 @@ writeRDS = function (object, file, compress = "gzip") {
   waitForFile(file, 300)
   invisible(TRUE)
 }
-
-# load registry
-reg = loadRegistry("experiments")
-
-# create job collection
-resources = list(ncpus = 4) # this shouldnt be important
-jc = makeJobCollection(resources = resources, reg = reg)
-
-# extract integer
-i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
-# i = 10L
-
-# get job
-job = batchtools:::getJob(jc, i)
-id = job$id
-
-# execute job
-result = execJob(job)
-
-# save ojb
-writeRDS(result, file = getResultFiles(jc, id), compress = jc$compress)
-
-# updates
 UpdateBuffer = R6Class(
   "UpdateBuffer",
   cloneable = FALSE,
@@ -121,9 +101,47 @@ UpdateBuffer = R6Class(
 
   )
 )
+
+
+# RUN JOB -----------------------------------------------------------------
+# load registry
+reg = loadRegistry("experiments")
+# reg = loadRegistry("F:/H4-v9")
+
+# extract not  done ids
+ids_not_done = findNotDone(reg=reg)
+
+# create job collection
+resources = list(ncpus = 4) # this shouldnt be important
+jc = makeJobCollection(ids_not_done, resources = resources, reg = reg)
+
+# extract integer
+i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
+# i = 10L
+
+# start buffer
 buf = UpdateBuffer$new(jc$jobs$job.id)
 update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_character_, mem.used = NA_real_)
+
+# get job
+job = batchtools:::getJob(jc, i)
+id = job$id
+
+# execute job
+gc(reset = TRUE)
+update$started = batchtools:::ustamp()
+result = execJob(job)
+
+# save ojb
+writeRDS(result, file = getResultFiles(jc, id), compress = jc$compress)
+
+# memory usage
+memory.mult = c(if (.Machine$sizeof.pointer == 4L) 28L else 56L, 8L)
+memory_used = sum(gc()[, 1L] * memory.mult) / 1000000L
+
+# updates
 update$done = batchtools:::ustamp()
+update$mem.used = memory_used
 buf$add(i, update)
 buf$flush(jc)
 buf$save(jc)
