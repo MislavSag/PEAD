@@ -15,24 +15,32 @@ reg$status[, max(mem.used, na.rm = TRUE)]
 ids_done = findDone(reg=reg)
 ids_notdone = findNotDone(reg=reg)
 
-# predictions
-bmrs = reduceResultsBatchmark(ids_done[1:1000, job.id], store_backends = FALSE, reg = reg)
-bmrs_dt = as.data.table(bmrs)
+# get results
+results = lapply(ids_done[, job.id], function(id_) {
+  # bmr object
+  bmrs = reduceResultsBatchmark(id_, store_backends = FALSE, reg = reg)
+  bmrs_dt = as.data.table(bmrs)
 
-# get predictions
-task_names = vapply(bmrs_dt$task, `[[`, FUN.VALUE = character(1L), "id")
-resample_names = vapply(bmrs_dt$resampling, `[[`, FUN.VALUE = character(1L), "id")
-cv_names = gsub("custom_|_.*", "", resample_names)
-fold_names = gsub("custom_\\d+_", "", resample_names)
-learner_names = vapply(bmrs_dt$learner, `[[`, FUN.VALUE = character(1L), "id")
-learner_names = gsub(".*\\.regr\\.|\\.tuned", "", learner_names)
-predictions = lapply(bmrs_dt$prediction, function(x) as.data.table(x))
-predictions = lapply(seq_along(predictions), function(j)
-  cbind(task = task_names[[j]],
-        learner = learner_names[[j]],
-        cv = cv_names[[j]],
-        fold = fold_names[[j]],
-        predictions[[j]]))
+  # get predictions
+  task_names = vapply(bmrs_dt$task, `[[`, FUN.VALUE = character(1L), "id")
+  resample_names = vapply(bmrs_dt$resampling, `[[`, FUN.VALUE = character(1L), "id")
+  cv_names = gsub("custom_|_.*", "", resample_names)
+  fold_names = gsub("custom_\\d+_", "", resample_names)
+  learner_names = vapply(bmrs_dt$learner, `[[`, FUN.VALUE = character(1L), "id")
+  learner_names = gsub(".*\\.regr\\.|\\.tuned", "", learner_names)
+  predictions = as.data.table(bmrs_dt$prediction[[1]])
+  setnames(predictions, "response.V1", "response", skip_absent=TRUE)
+  predictions = cbind(task_names, learner_names, cv_names, fold_names, predictions)
+  # predictions = lapply(seq_along(predictions), function(j)
+  #   cbind(task = task_names[[j]],
+  #         learner = learner_names[[j]],
+  #         cv = cv_names[[j]],
+  #         fold = fold_names[[j]],
+  #         predictions[[j]]))
+
+  return(predictions)
+})
+predictions = rbindlist(results, fill = TRUE)
 
 # import tasks
 tasks_files = dir_ls("F:/H4-v9/problems")
@@ -72,27 +80,18 @@ mlr_measures$add("adjloss2", AdjLoss2)
 mlr_measures$add("portfolio_ret", PortfolioRet)
 
 # merge backs and predictions
-predictions <- lapply(seq_along(predictions), function(j) {
-  y = backend[predictions[[j]], on = c("row_ids")]
-  y[, date := as.Date(date, origin = "1970-01-01")]
-  y
-})
-predictions = rbindlist(predictions)
-
-
-# AGGREGATED RESULTS ------------------------------------------------------
-# aggregated results
-agg = bmrs$aggregate(msrs(c("regr.mse", "regr.mae", "linex", "adjloss2", "portfolio_ret")))
-agg[, learner_id := gsub(".*\\.regr\\.|\\.tuned", "", learner_id)]
-cols = colnames(agg)[7:ncol(agg)]
-agg[, lapply(.SD, function(x) mean(x)), by = .(task_id, learner_id), .SDcols = cols]
+predictions = backend[predictions, on = c("row_ids")]
+predictions[, date := as.Date(date)]
+setnames(predictions,
+         c("task_names", "learner_names", "cv_names"),
+         c("task", "learner", "cv"),
+         skip_absent = TRUE)
 
 
 # PREDICTIONS RESULTS -----------------------------------------------------
 
 # predictions
 # predictions_l_naomit = predictions_l[-which(na_test)]
-predictions_dt = rbindlist(predictions_l)
 predictions[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign = as.factor(sign(response))
@@ -114,7 +113,7 @@ predictions[, measures(truth_sign, response_sign), by = c("task")]
 predictions[, measures(truth_sign, response_sign), by = c("learner")]
 predictions[, measures(truth_sign, response_sign), by = c("cv", "task")]
 predictions[, measures(truth_sign, response_sign), by = c("cv", "learner")]
-predictions[, measures(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
+# predictions[, measures(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
 
 # hit ratio for ensamble
 predictions_ensemble = predictions[, .(
