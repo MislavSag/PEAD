@@ -35,7 +35,6 @@ From: r-base:4.3.0
   R --slave -e 'install.packages("nnet")'
   R --slave -e 'install.packages("praznik")'
   R --slave -e 'install.packages("remotes")'
-  R --slave -e 'install.packages("dbarts")'
   R --slave -e 'remotes::install_github("mlr-org/mlr3extralearners@*release")'
   R --slave -e 'install.packages("lightgbm")'
   R --slave -e 'install.packages("earth")'

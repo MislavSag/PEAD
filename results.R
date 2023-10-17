@@ -7,18 +7,31 @@ library(batchtools)
 # load registry
 reg = loadRegistry("F:/H4-v9", work.dir="F:/H4-v9")
 
+# used memory
+reg$status[!is.na(mem.used)]
+reg$status[, max(mem.used, na.rm = TRUE)]
+
+# done jobs
+ids_done = findDone(reg=reg)
+ids_notdone = findNotDone(reg=reg)
+
 # predictions
-bmrs = reduceResultsBatchmark(store_backends = FALSE, reg = reg)
+bmrs = MyreduceResultsBatchmark(ids_done[1:1000, job.id], store_backends = FALSE, reg = reg)
 bmrs_dt = as.data.table(bmrs)
 
 # get predictions
 task_names = vapply(bmrs_dt$task, `[[`, FUN.VALUE = character(1L), "id")
+resample_names = vapply(bmrs_dt$resampling, `[[`, FUN.VALUE = character(1L), "id")
+cv_names = gsub("custom_|_.*", "", resample_names)
+fold_names = gsub("custom_\\d+_", "", resample_names)
 learner_names = vapply(bmrs_dt$learner, `[[`, FUN.VALUE = character(1L), "id")
 learner_names = gsub(".*\\.regr\\.|\\.tuned", "", learner_names)
 predictions = lapply(bmrs_dt$prediction, function(x) as.data.table(x))
 predictions = lapply(seq_along(predictions), function(j)
   cbind(task = task_names[[j]],
         learner = learner_names[[j]],
+        cv = cv_names[[j]],
+        fold = fold_names[[j]],
         predictions[[j]]))
 
 # import tasks
@@ -31,7 +44,7 @@ tasks
 get_backend = function(task_name = "taskRetWeek") {
   task_ = tasks[names(tasks) == task_name][[1]]
   task_ = task_$data$backend
-  task_ = task_$data(rows = task_$rownames, cols = ids_)
+  task_ = task_$data(rows = task_$rownames, cols = id_cols)
   return(task_)
 }
 id_cols = c("symbol", "date", "yearmonthid", "..row_id", "epsDiff", "nincr", "nincr2y", "nincr3y")
@@ -58,7 +71,6 @@ mlr_measures$add("linex", Linex)
 mlr_measures$add("adjloss2", AdjLoss2)
 mlr_measures$add("portfolio_ret", PortfolioRet)
 
-# merge tasks and predictions
 # merge backs and predictions
 predictions <- lapply(seq_along(predictions), function(j) {
   y = backend[predictions[[j]], on = c("row_ids")]
@@ -75,6 +87,78 @@ agg[, learner_id := gsub(".*\\.regr\\.|\\.tuned", "", learner_id)]
 cols = colnames(agg)[7:ncol(agg)]
 agg[, lapply(.SD, function(x) mean(x)), by = .(task_id, learner_id), .SDcols = cols]
 
+
+# PREDICTIONS RESULTS -----------------------------------------------------
+
+# predictions
+# predictions_l_naomit = predictions_l[-which(na_test)]
+predictions_dt = rbindlist(predictions_l)
+predictions[, `:=`(
+  truth_sign = as.factor(sign(truth)),
+  response_sign = as.factor(sign(response))
+)]
+
+# number of predictions by task and cv
+unique(predictions, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task")]
+unique(predictions, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task", "cv")]
+
+# accuracy by ids
+measures = function(t, res) {
+  list(acc   = mlr3measures::acc(t, res),
+       fbeta = mlr3measures::fbeta(t, res, positive = "1"),
+       tpr   = mlr3measures::tpr(t, res, positive = "1"),
+       tnr   = mlr3measures::tnr(t, res, positive = "1"))
+}
+predictions[, measures(truth_sign, response_sign), by = c("cv")]
+predictions[, measures(truth_sign, response_sign), by = c("task")]
+predictions[, measures(truth_sign, response_sign), by = c("learner")]
+predictions[, measures(truth_sign, response_sign), by = c("cv", "task")]
+predictions[, measures(truth_sign, response_sign), by = c("cv", "learner")]
+predictions[, measures(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
+
+# hit ratio for ensamble
+predictions_ensemble = predictions[, .(
+  mean_response = mean(response),
+  median_response = median(response),
+  sign_response = sum(sign(response)),
+  sd_response = sd(response),
+  truth = mean(truth),
+  symbol = symbol,
+  date = date,
+  yearmonthid = yearmonthid,
+  epsDiff = epsDiff
+),
+by = c("task", "row_ids")]
+predictions_ensemble[, `:=`(
+  truth_sign = as.factor(sign(truth)),
+  response_sign_median = as.factor(sign(median_response)),
+  response_sign_mean = as.factor(sign(mean_response))
+  # response_sign_sign_pos = sign_response > 15,
+  # response_sign_sign_neg = sign_response < -15
+)]
+predictions_ensemble = unique(predictions_ensemble, by = c("task", "row_ids"))
+sign_response_max = predictions_ensemble[, max(sign_response)]
+sign_response_seq = seq(as.integer(sign_response_max / 2), sign_response_max - 1)
+cols_sign_response_pos = paste0("response_sign_sign_pos", sign_response_seq)
+predictions_ensemble[, (cols_sign_response_pos) := lapply(sign_response_seq, function(x) sign_response > x)]
+cols_sign_response_neg = paste0("response_sign_sign_neg", sign_response_seq)
+predictions_ensemble[, (cols_sign_response_neg) := lapply(sign_response_seq, function(x) sign_response < -x)]
+# cols_ = colnames(predictions_dt_ensemble)[24:ncol(predictions_dt_ensemble)]
+# predictions_dt_ensemble[, lapply(.SD, function(x) sum(x == TRUE)), .SDcols = cols_]
+
+# check only sign ensamble performance
+res = lapply(cols_sign_response_pos, function(x) {
+  predictions_ensemble[get(x) == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
+})
+names(res) = cols_sign_response_pos
+res
+
+# check only sign ensamble performance all
+res = lapply(cols_sign_response_pos, function(x) {
+  predictions_ensemble[get(x) == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1)))]
+})
+names(res) = cols_sign_response_pos
+res
 
 
 # IMPORTANT VARIABLES -----------------------------------------------------
