@@ -432,13 +432,19 @@ graph_template =
   po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
-  po("uniformization") %>>%
+  # po("uniformization") %>>%
+  # scale branch
+  po("branch", options = c("uniformization", "scale"), id = "scale_branch") %>>%
+  gunion(list(po("uniformization"),
+              po("scale")
+  )) %>>%
+  po("unbranch", id = "scale_unbranch") %>>%
   po("dropna", id = "dropna_v2") %>>%
   # filters
   po("branch", options = c("jmi", "relief", "gausscov"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
               po("filter", filter = flt("relief"), filter.frac = 0.05),
-              po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0)
+              po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0)
   )) %>>%
   # po("nop", id = "nop_filter"))) %>>%
   po("unbranch", id = "filter_unbranch") %>>%
@@ -468,6 +474,8 @@ search_space_template = ps(
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # scaling
+  scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
   filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
   # interaction
@@ -510,6 +518,8 @@ search_space_xgboost = ps(
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # scaling
+  scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
   filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
   # interaction
@@ -605,6 +615,8 @@ search_space_kknn = ps(
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # scaling
+  scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
   filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
   # interaction
@@ -678,13 +690,18 @@ graph_template =
   po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
-  po("uniformization") %>>%
+  # scale branch
+  po("branch", options = c("uniformization", "scale"), id = "scale_branch") %>>%
+  gunion(list(po("uniformization"),
+              po("scale")
+  )) %>>%
+  po("unbranch", id = "scale_unbranch") %>>%
   po("dropna", id = "dropna_v2") %>>%
   # filters
   po("branch", options = c("jmi", "relief", "gausscov"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
               po("filter", filter = flt("relief"), filter.frac = 0.05),
-              po("filter", filter = flt("gausscov_f3st"), m = 2, filter.cutoff = 0)
+              po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0)
   )) %>>%
   po("unbranch", id = "filter_unbranch")
 search_space_template = ps(
@@ -704,6 +721,8 @@ search_space_template = ps(
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
   winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
   winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # scaling
+  scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
   filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov"))
 )
@@ -949,7 +968,7 @@ packages = c("data.table", "gausscov", "paradox", "mlr3", "mlr3pipelines",
              "mlr3tuning", "mlr3misc", "future", "future.apply",
              "mlr3extralearners")
 reg = makeExperimentRegistry(
-  file.dir = "./experiments",
+  file.dir = "./experiments2",
   seed = 1,
   packages = packages
 )
@@ -960,3 +979,12 @@ batchmark(designs, reg = reg)
 
 # save registry
 saveRegistry(reg = reg)
+
+# cluster functions
+cf = makeClusterFunctionsTORQUE(template = "torque-lido.tmpl")
+reg$cluster.functions = cf
+saveRegistry(reg = reg)
+
+resources = list(ncpus = 4, walltime = 3600*24*4, memory = 5000)
+
+submitJobs(resources = resources, reg = reg)

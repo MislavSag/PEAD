@@ -2,7 +2,15 @@ library(fs)
 library(data.table)
 library(mlr3batchmark)
 library(batchtools)
+library(duckdb)
+library(PerformanceAnalytics)
+library(AzureStor)
 
+
+# creds
+blob_key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJLu1wVE6HT+ASt0DdAPQ=="
+endpoint = "https://snpmarketdata.blob.core.windows.net/"
+BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
 
 # load registry
 reg = loadRegistry("F:/H4-v9", work.dir="F:/H4-v9")
@@ -89,17 +97,18 @@ setnames(predictions,
 
 
 # PREDICTIONS RESULTS -----------------------------------------------------
-
 # predictions
-# predictions_l_naomit = predictions_l[-which(na_test)]
 predictions[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign = as.factor(sign(response))
 )]
 
+# remove na value
+predictions_dt = na.omit(predictions)
+
 # number of predictions by task and cv
-unique(predictions, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task")]
-unique(predictions, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task", "cv")]
+unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task")]
+unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task", "cv")]
 
 # accuracy by ids
 measures = function(t, res) {
@@ -108,11 +117,11 @@ measures = function(t, res) {
        tpr   = mlr3measures::tpr(t, res, positive = "1"),
        tnr   = mlr3measures::tnr(t, res, positive = "1"))
 }
-predictions[, measures(truth_sign, response_sign), by = c("cv")]
-predictions[, measures(truth_sign, response_sign), by = c("task")]
-predictions[, measures(truth_sign, response_sign), by = c("learner")]
-predictions[, measures(truth_sign, response_sign), by = c("cv", "task")]
-predictions[, measures(truth_sign, response_sign), by = c("cv", "learner")]
+predictions_dt[, measures(truth_sign, response_sign), by = c("cv")]
+predictions_dt[, measures(truth_sign, response_sign), by = c("task")]
+predictions_dt[, measures(truth_sign, response_sign), by = c("learner")]
+predictions_dt[, measures(truth_sign, response_sign), by = c("cv", "task")]
+predictions_dt[, measures(truth_sign, response_sign), by = c("cv", "learner")]
 # predictions[, measures(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
 
 # hit ratio for ensamble
@@ -132,11 +141,9 @@ predictions_ensemble[, `:=`(
   truth_sign = as.factor(sign(truth)),
   response_sign_median = as.factor(sign(median_response)),
   response_sign_mean = as.factor(sign(mean_response))
-  # response_sign_sign_pos = sign_response > 15,
-  # response_sign_sign_neg = sign_response < -15
 )]
 predictions_ensemble = unique(predictions_ensemble, by = c("task", "row_ids"))
-sign_response_max = predictions_ensemble[, max(sign_response)]
+sign_response_max = predictions_ensemble[, max(sign_response, na.rm = TRUE)]
 sign_response_seq = seq(as.integer(sign_response_max / 2), sign_response_max - 1)
 cols_sign_response_pos = paste0("response_sign_sign_pos", sign_response_seq)
 predictions_ensemble[, (cols_sign_response_pos) := lapply(sign_response_seq, function(x) sign_response > x)]
@@ -159,10 +166,130 @@ res = lapply(cols_sign_response_pos, function(x) {
 names(res) = cols_sign_response_pos
 res
 
+# save to azure for QC backtest
+cont = storage_container(BLOBENDPOINT, "qc-backtest")
+lapply(unique(predictions_ensemble$task), function(x) {
+  # debug
+  # x = "taskRetQuarter"
+
+  # prepare data
+  y = predictions_ensemble[task == x]
+  y = na.omit(y)
+  cols = colnames(y)[grep("response_sign", colnames(y))]
+  cols = c("symbol", "date", "epsDiff", cols)
+  y = y[, ..cols]
+  y = unique(y)
+
+  # remove where all false
+  y = y[response_sign_sign_pos10 == TRUE]
+
+  # min and max date
+  y[, min(date)]
+  y[, max(date)]
+
+  # by date
+  # cols_ = setdiff(cols, "date")
+  # y = y[, lapply(.SD, function(x) paste0(x, collapse = "|")), by = date]
+  # y[, date := as.character(date)]
+  # setorder(y, date)
+
+  # y = y[, .(
+  #   symbol = paste0(symbol, collapse = "|"),
+  #   response = paste0(response, collapse = "|"),
+  #   epsdiff = paste0(epsDiff, collapse = "|"),
+  #
+  # ), by = date]
+
+  # order
+  setorder(y, date)
+
+  # save to azure blob
+  print(colnames(y))
+  file_name_ =  paste0("pead-", x, ".csv")
+  storage_write_csv(y, cont, file_name_)
+  # universe = y[, .(date, symbol)]
+  # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
+})
+
+
+
+# SYSTEMIC RISK -----------------------------------------------------------
+# import SPY data
+con <- dbConnect(duckdb::duckdb())
+query <- sprintf("
+    SELECT *
+    FROM 'F:/lean_root/data/all_stocks_daily.csv'
+    WHERE Symbol = 'spy'
+")
+spy <- dbGetQuery(con, query)
+dbDisconnect(con)
+spy = as.data.table(spy)
+spy = spy[, .(date = Date, close = `Adj Close`)]
+spy[, returns := close / shift(close) - 1]
+spy = na.omit(spy)
+plot(spy[, close])
+
+# systemic risk
+task_ = "taskRetMonth2"
+sample_ = predictions_ensemble[task == task_]
+sample_ = na.omit(sample_)
+sample_ = unique(sample_)
+setorder(sample_, date)
+pos_cols = colnames(sample_)[grep("pos", colnames(sample_))]
+neg_cols = colnames(sample_)[grep("neg", colnames(sample_))]
+new_dt = sample_[, ..pos_cols] - sample_[, ..neg_cols]
+setnames(new_dt, gsub("pos", "net", pos_cols))
+sample_ = cbind(sample_, new_dt)
+sample_[, max(date)]
+sample_ = sample_[date < sample_[, max(date)]]
+sample_ = sample_[date > sample_[, min(date)]]
+plot(as.xts.data.table(sample_[, .N, by = date]))
+
+# calculate indicator
+indicator = sample_[, .(ind = median(median_response)), by = "date"]
+indicator[, ind_ema := TTR::EMA(ind, 10, na.rm = TRUE)]
+indicator = na.omit(indicator)
+plot(as.xts.data.table(indicator))
+plot(as.xts.data.table(indicator)[, 2])
+
+# create backtest data
+backtest_data =  merge(spy, indicator, by = "date", all.x = TRUE, all.y = FALSE)
+backtest_data = backtest_data[date > indicator[, min(date)]]
+backtest_data = backtest_data[date < indicator[, max(date)]]
+backtest_data[, signal := 1]
+backtest_data[shift(ind_ema) < -0.01, signal := 0]          # 1
+# backtest_data[shift(diff(mean_response_agg_ema, 5)) < -0.01, signal := 0] # 2
+backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1))])
+charts.PerformanceSummary(backtest_data_xts)
+# backtest performance
+Performance <- function(x) {
+  cumRetx = Return.cumulative(x)
+  annRetx = Return.annualized(x, scale=252)
+  sharpex = SharpeRatio.annualized(x, scale=252)
+  winpctx = length(x[x > 0])/length(x[x != 0])
+  annSDx = sd.annualized(x, scale=252)
+
+  DDs <- findDrawdowns(x)
+  maxDDx = min(DDs$return)
+  # maxLx = max(DDs$length)
+
+  Perf = c(cumRetx, annRetx, sharpex, winpctx, annSDx, maxDDx) # , maxLx)
+  names(Perf) = c("Cumulative Return", "Annual Return","Annualized Sharpe Ratio",
+                  "Win %", "Annualized Volatility", "Maximum Drawdown") # "Max Length Drawdown")
+  return(Perf)
+}
+Performance(backtest_data_xts[, 1])
+Performance(backtest_data_xts[, 2])
+
+# analyse indicator
+library(forecast)
+ndiffs(as.xts.data.table(indicator)[, 1])
+plot(diff(as.xts.data.table(indicator)[, 1]))
+
 
 # IMPORTANT VARIABLES -----------------------------------------------------
 # gausscov files
-gausscov_files = dir_ls("F:/H4-v9-gausscov")
+gausscov_files = dir_ls("F:/H4-v9-gausscov/gausscov_f3")
 
 # arrange files
 task_ = gsub(".*f3-|-\\d+.rds", "", gausscov_files)
