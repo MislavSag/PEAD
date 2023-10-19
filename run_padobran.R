@@ -11,7 +11,7 @@ library(future)
 library(future.apply)
 library(batchtools)
 library(mlr3batchmark)
-
+remotes::install_github("mlr-org/mlr3extralearners@*release", lib = '/home/jmaric/Rlibs')
 
 # SETUP -------------------------------------------------------------------
 # create folder in which we will save results
@@ -969,7 +969,7 @@ packages = c("data.table", "gausscov", "paradox", "mlr3", "mlr3pipelines",
              "mlr3tuning", "mlr3misc", "future", "future.apply",
              "mlr3extralearners")
 reg = makeExperimentRegistry(
-  file.dir = "./experiments2",
+  file.dir = "./experiments",
   seed = 1,
   packages = packages
 )
@@ -980,12 +980,3 @@ batchmark(designs, reg = reg)
 
 # save registry
 saveRegistry(reg = reg)
-
-# cluster functions
-cf = makeClusterFunctionsTORQUE(template = "torque-lido.tmpl")
-reg$cluster.functions = cf
-saveRegistry(reg = reg)
-
-resources = list(ncpus = 4, walltime = 3600*24*4, memory = 5000)
-
-submitJobs(resources = resources, reg = reg)
