@@ -1,3 +1,4 @@
+options(warn = -1)
 library(data.table)
 library(gausscov)
 library(paradox)
@@ -11,15 +12,9 @@ library(future)
 library(future.apply)
 library(batchtools)
 library(mlr3batchmark)
-remotes::install_github("mlr-org/mlr3extralearners@*release", lib = '/home/jmaric/Rlibs')
+
 
 # SETUP -------------------------------------------------------------------
-# create folder in which we will save results
-mlr3_save_path = paste0("./H4-jobarray-", Sys.getenv('PBS_ARRAY_ID'))
-if (!dir.exists(mlr3_save_path)) {
-  dir.create(mlr3_save_path)
-}
-
 # utils https://stackoverflow.com/questions/1995933/number-of-months-between-two-dates
 monnb <- function(d) {
   lt <- as.POSIXlt(as.Date(d, origin="1900-01-01"))
