@@ -5,6 +5,7 @@ library(batchtools)
 library(duckdb)
 library(PerformanceAnalytics)
 library(AzureStor)
+library(future.apply)
 
 
 # creds
@@ -13,7 +14,7 @@ endpoint = "https://snpmarketdata.blob.core.windows.net/"
 BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
 
 # load registry
-reg = loadRegistry("F:/H4-v9", work.dir="F:/H4-v9")
+reg = loadRegistry("F:/H4", work.dir="F:/H4")
 
 # used memory
 reg$status[!is.na(mem.used)]
@@ -21,10 +22,13 @@ reg$status[, max(mem.used, na.rm = TRUE)]
 
 # done jobs
 ids_done = findDone(reg=reg)
+ids_done = ids_done[job.id %in% fs::path_ext_remove(fs::path_file(dir_ls("F:/H4/results")))]
 ids_notdone = findNotDone(reg=reg)
 
 # get results
-results = lapply(ids_done[, job.id], function(id_) {
+plan("multisession", workers = 4L)
+start_time = Sys.time()
+results = future_lapply(ids_done[, job.id], function(id_) {
   # bmr object
   bmrs = reduceResultsBatchmark(id_, store_backends = FALSE, reg = reg)
   bmrs_dt = as.data.table(bmrs)
@@ -44,14 +48,19 @@ results = lapply(ids_done[, job.id], function(id_) {
   #         learner = learner_names[[j]],
   #         cv = cv_names[[j]],
   #         fold = fold_names[[j]],
-  #         predictions[[j]]))
+  #         predictions[[j]]))j
 
   return(predictions)
 })
+end_time = Sys.time()
+end_time - start_time
+# 1: Time difference of 40.88229 secs
+# 2: Time difference of 19.56966 secs
+# 4 1572: Time difference of 39.13002 mins
 predictions = rbindlist(results, fill = TRUE)
 
 # import tasks
-tasks_files = dir_ls("F:/H4-v9/problems")
+tasks_files = dir_ls("F:/H4/problems")
 tasks = lapply(tasks_files, readRDS)
 names(tasks) = lapply(tasks, function(t) t$data$id)
 tasks
@@ -154,14 +163,16 @@ predictions_ensemble[, (cols_sign_response_neg) := lapply(sign_response_seq, fun
 
 # check only sign ensamble performance
 res = lapply(cols_sign_response_pos, function(x) {
-  predictions_ensemble[get(x) == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
+  predictions_ensemble[get(x) == TRUE][
+    , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
 })
 names(res) = cols_sign_response_pos
 res
 
 # check only sign ensamble performance all
 res = lapply(cols_sign_response_pos, function(x) {
-  predictions_ensemble[get(x) == TRUE][, mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1)))]
+  predictions_ensemble[get(x) == TRUE][
+    , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1)))]
 })
 names(res) = cols_sign_response_pos
 res
