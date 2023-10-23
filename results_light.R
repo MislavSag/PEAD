@@ -21,12 +21,18 @@ reg$status[!is.na(mem.used)]
 reg$status[, max(mem.used, na.rm = TRUE)]
 
 # done jobs
+results_files = fs::path_ext_remove(fs::path_file(dir_ls("F:/H4/results")))
 ids_done = findDone(reg=reg)
-ids_done = ids_done[job.id %in% fs::path_ext_remove(fs::path_file(dir_ls("F:/H4/results")))]
+ids_done = ids_done[job.id %in% results_files]
 ids_notdone = findNotDone(reg=reg)
+rbind(ids_notdone, ids_done[job.id %in% results_files])
+
+# import already saved predictions
+fs::dir_ls("predictions")
+predictions = readRDS("predictions/predictions-20231023092108.rds")
 
 # get results
-plan("multisession", workers = 4L)
+plan("multisession", workers = 8L)
 start_time = Sys.time()
 results = future_lapply(ids_done[, job.id], function(id_) {
   # bmr object
@@ -57,7 +63,14 @@ end_time - start_time
 # 1: Time difference of 40.88229 secs
 # 2: Time difference of 19.56966 secs
 # 4 1572: Time difference of 39.13002 mins
+# 8 6378:Time difference of 2.479138 hours
 predictions = rbindlist(results, fill = TRUE)
+
+# save predictions
+time_ = strftime(Sys.time(), format = "%Y%m%d%H%M%S")
+file_name = paste0("predictions/predictions-", time_, ".rds")
+if (!fs::dir_exists("predictions")) fs::dir_create("predictions")
+# saveRDS(predictions, file_name)
 
 # import tasks
 tasks_files = dir_ls("F:/H4/problems")
@@ -181,7 +194,7 @@ res
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
 lapply(unique(predictions_ensemble$task), function(x) {
   # debug
-  # x = "taskRetQuarter"
+  # x = "taskRetWeek"
 
   # prepare data
   y = predictions_ensemble[task == x]
@@ -192,7 +205,7 @@ lapply(unique(predictions_ensemble$task), function(x) {
   y = unique(y)
 
   # remove where all false
-  y = y[response_sign_sign_pos10 == TRUE]
+  y = y[response_sign_sign_pos13 == TRUE]
 
   # min and max date
   y[, min(date)]
@@ -223,7 +236,6 @@ lapply(unique(predictions_ensemble$task), function(x) {
 })
 
 
-
 # SYSTEMIC RISK -----------------------------------------------------------
 # import SPY data
 con <- dbConnect(duckdb::duckdb())
@@ -241,7 +253,7 @@ spy = na.omit(spy)
 plot(spy[, close])
 
 # systemic risk
-task_ = "taskRetMonth2"
+task_ = "taskRetWeek"
 sample_ = predictions_ensemble[task == task_]
 sample_ = na.omit(sample_)
 sample_ = unique(sample_)
@@ -257,18 +269,22 @@ sample_ = sample_[date > sample_[, min(date)]]
 plot(as.xts.data.table(sample_[, .N, by = date]))
 
 # calculate indicator
-indicator = sample_[, .(ind = median(median_response)), by = "date"]
-indicator[, ind_ema := TTR::EMA(ind, 10, na.rm = TRUE)]
+indicator = sample_[, .(ind = median(median_response),
+                        ind_sd = sd(sd_response)), by = "date"]
 indicator = na.omit(indicator)
-plot(as.xts.data.table(indicator))
+indicator[, ind_ema := TTR::EMA(ind, 2, na.rm = TRUE)]
+indicator[, ind_sd_ema := TTR::EMA(ind_sd, 2, na.rm = TRUE)]
+indicator = na.omit(indicator)
+plot(as.xts.data.table(indicator)[, 1])
 plot(as.xts.data.table(indicator)[, 2])
+plot(as.xts.data.table(indicator)[, 3])
 
 # create backtest data
 backtest_data =  merge(spy, indicator, by = "date", all.x = TRUE, all.y = FALSE)
 backtest_data = backtest_data[date > indicator[, min(date)]]
 backtest_data = backtest_data[date < indicator[, max(date)]]
 backtest_data[, signal := 1]
-backtest_data[shift(ind_ema) < -0.01, signal := 0]          # 1
+backtest_data[shift(ind_sd_ema) > 0.15, signal := 0]          # 1
 # backtest_data[shift(diff(mean_response_agg_ema, 5)) < -0.01, signal := 0] # 2
 backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1))])
 charts.PerformanceSummary(backtest_data_xts)
