@@ -1,4 +1,3 @@
-options(warn = -1)
 library(data.table)
 library(gausscov)
 library(paradox)
@@ -419,7 +418,7 @@ mlr_measures$add("portfolio_ret", PortfolioRet)
 # GRAPH V2 ----------------------------------------------------------------
 # graph template
 graph_template =
-  po("subsample") %>>% # uncomment this for hyperparameter tuning
+  # po("subsample") %>>% # uncomment this for hyperparameter tuning
   po("dropnacol", id = "dropnacol", cutoff = 0.05) %>>%
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
@@ -453,10 +452,20 @@ graph_template =
   po("removeconstants", id = "removeconstants_3", ratio = 0)
 
 # hyperparameters template
+graph_template$param_set
 search_space_template = ps(
   # subsample for hyperband
-  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
+  dropnacol.affect_columns = p_fct(
+    levels = c("0.01", "0.05", "0.10"),
+    trafo = function(x, param_set) {
+      switch(x,
+             "0.01" = 0.01,
+             "0.05" = 0.05,
+             "0.10" = 0.1)
+    }
+  ),
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -486,10 +495,13 @@ graph_rf = as_learner(graph_rf)
 as.data.table(graph_rf$param_set)[, .(id, class, lower, upper, levels)]
 search_space_rf = search_space_template$clone()
 search_space_rf$add(
-  ps(regr.ranger.max.depth  = p_int(1, 40),
+  ps(regr.ranger.max.depth  = p_int(1, 20),
      regr.ranger.replace    = p_lgl(),
-     regr.ranger.mtry.ratio = p_dbl(0.1, 1))
+     regr.ranger.mtry.ratio = p_dbl(0.1, 1),
+     regr.ranger.splitrule  = p_fct(levels = c("variance", "extratrees")))
 )
+# regr.ranger.min.node.size   = p_int(1, 20), # Adjust the range as needed
+# regr.ranger.sample.fraction = p_dbl(0.1, 1),
 
 # xgboost graph
 graph_xgboost = graph_template %>>%
@@ -499,8 +511,17 @@ graph_xgboost = as_learner(graph_xgboost)
 as.data.table(graph_xgboost$param_set)[grep("depth", id), .(id, class, lower, upper, levels)]
 search_space_xgboost = ps(
   # subsample for hyperband
-  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
+  dropnacol.affect_columns = p_fct(
+    levels = c("0.01", "0.05", "0.10"),
+    trafo = function(x, param_set) {
+      switch(x,
+             "0.01" = 0.01,
+             "0.05" = 0.05,
+             "0.10" = 0.1)
+    }
+  ),
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -524,7 +545,8 @@ search_space_xgboost = ps(
   regr.xgboost.alpha     = p_dbl(0.001, 100, logscale = TRUE),
   regr.xgboost.max_depth = p_int(1, 20),
   regr.xgboost.eta       = p_dbl(0.0001, 1, logscale = TRUE),
-  regr.xgboost.nrounds   = p_int(1, 5000)
+  regr.xgboost.nrounds   = p_int(1, 5000),
+  regr.xgboost.subsample = p_dbl(0.1, 1)
 )
 
 # gbm graph
@@ -542,20 +564,19 @@ search_space_gbm$add(
   # ....
 )
 
-# # catboost graph
-# ### REMOVED FROM MLR3EXTRALEARNERS FROM VERSION 0.7.0.
-# graph_catboost = graph_template %>>%
-#   po("learner", learner = lrn("regr.catboost"))
-# graph_catboost = as_learner(graph_catboost)
-# as.data.table(graph_catboost$param_set)[, .(id, class, lower, upper, levels)]
-# search_space_catboost = search_space_template$clone()
-# # https://catboost.ai/en/docs/concepts/parameter-tuning#description10
-# search_space_catboost$add(
-#   ps(regr.catboost.learning_rate   = p_dbl(lower = 0.01, upper = 0.3),
-#      regr.catboost.depth           = p_int(lower = 4, upper = 10),
-#      regr.catboost.l2_leaf_reg     = p_int(lower = 1, upper = 5),
-#      regr.catboost.random_strength = p_int(lower = 0, upper = 3))
-# )
+# catboost graph
+graph_catboost = graph_template %>>%
+  po("learner", learner = lrn("regr.catboost"))
+graph_catboost = as_learner(graph_catboost)
+as.data.table(graph_catboost$param_set)[, .(id, class, lower, upper, levels)]
+search_space_catboost = search_space_template$clone()
+# https://catboost.ai/en/docs/concepts/parameter-tuning#description10
+search_space_catboost$add(
+  ps(regr.catboost.learning_rate   = p_dbl(lower = 0.01, upper = 0.3),
+     regr.catboost.depth           = p_int(lower = 4, upper = 10),
+     regr.catboost.l2_leaf_reg     = p_int(lower = 1, upper = 5),
+     regr.catboost.random_strength = p_int(lower = 0, upper = 3))
+)
 
 # # gamboost graph
 # # Error in eval(predvars, data, env) : object 'adxDx14' not found
@@ -566,23 +587,6 @@ search_space_gbm$add(
 # graph_gamboost = as_learner(graph_gamboost)
 # as.data.table(graph_gamboost$param_set)[, .(id, class, lower, upper, levels)]
 # search_space_gamboost = search_space_template$clone()
-# # https://catboost.ai/en/docs/concepts/parameter-tuning#description10
-# search_space_gamboost$add(
-#   ps(regr.gamboost.mstop       = p_int(lower = 10, upper = 100),
-#      regr.gamboost.nu          = p_dbl(lower = 0.01, upper = 0.5),
-#      regr.gamboost.baselearner = p_fct(levels = c("bbs", "bols", "btree")))
-# )
-
-# # gamboost graph
-# # Error in eval(predvars, data, env) : object 'adxDx14' not found
-# # This happened PipeOp regr.gamboost's $train()
-# # In addition: There were 50 or more warnings (use warnings() to see the first 50)
-# graph_gamboost = graph_template %>>%
-#   po("learner", learner = lrn("regr.gamboost"))
-# graph_gamboost = as_learner(graph_gamboost)
-# as.data.table(graph_gamboost$param_set)[, .(id, class, lower, upper, levels)]
-# search_space_gamboost = search_space_template$clone()
-# # https://catboost.ai/en/docs/concepts/parameter-tuning#description10
 # search_space_gamboost$add(
 #   ps(regr.gamboost.mstop       = p_int(lower = 10, upper = 100),
 #      regr.gamboost.nu          = p_dbl(lower = 0.01, upper = 0.5),
@@ -596,16 +600,27 @@ graph_kknn = as_learner(graph_kknn)
 as.data.table(graph_kknn$param_set)[, .(id, class, lower, upper, levels)]
 search_space_kknn = ps(
   # subsample for hyperband
-  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
+  dropnacol.affect_columns = p_fct(
+    levels = c("0.01", "0.05", "0.10"),
+    trafo = function(x, param_set) {
+      switch(x,
+             "0.01" = 0.01,
+             "0.05" = 0.05,
+             "0.10" = 0.1)
+    }
+  ),
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
-      switch(x,
-             "0.80" = 0.80,
-             "0.90" = 0.90,
-             "0.95" = 0.95,
-             "0.99" = 0.99)
+      switch(
+        x,
+        "0.80" = 0.80,
+        "0.90" = 0.90,
+        "0.95" = 0.95,
+        "0.99" = 0.99
+      )
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
@@ -618,9 +633,25 @@ search_space_kknn = ps(
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
-  regr.kknn.k        = p_int(lower = 1, upper = 50, logscale = TRUE),
+  regr.kknn.k        = p_int(
+    lower = 1,
+    upper = 50,
+    logscale = TRUE
+  ),
   regr.kknn.distance = p_dbl(lower = 1, upper = 5),
-  regr.kknn.kernel   = p_fct(levels = c("rectangular", "optimal", "epanechnikov", "biweight", "triweight", "cos",  "inv",  "gaussian", "rank"))
+  regr.kknn.kernel   = p_fct(
+    levels = c(
+      "rectangular",
+      "optimal",
+      "epanechnikov",
+      "biweight",
+      "triweight",
+      "cos",
+      "inv",
+      "gaussian",
+      "rank"
+    )
+  )
 )
 
 # nnet graph
@@ -677,7 +708,7 @@ search_space_nnet$add(
 # lightgbm graph
 # [LightGBM] [Fatal] Do not support special JSON characters in feature name.
 graph_template =
-  po("subsample") %>>% # uncomment this for hyperparameter tuning
+  # po("subsample") %>>% # uncomment this for hyperparameter tuning
   po("dropnacol", id = "dropnacol", cutoff = 0.05) %>>%
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
@@ -702,8 +733,17 @@ graph_template =
   po("unbranch", id = "filter_unbranch")
 search_space_template = ps(
   # subsample for hyperband
-  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
+  dropnacol.affect_columns = p_fct(
+    levels = c("0.01", "0.05", "0.10"),
+    trafo = function(x, param_set) {
+      switch(x,
+             "0.01" = 0.01,
+             "0.05" = 0.05,
+             "0.10" = 0.1)
+    }
+  ),
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -764,9 +804,6 @@ search_space_rsm$add(
 # This happened PipeOp regr.rsm's $train()
 
 # BART graph
-# Error in makeModelMatrixFromDataFrame(x.test, if (!is.null(drop)) drop else TRUE) :
-#   when list, drop must have length equal to x
-# This happened PipeOp regr.bart's $predict()
 graph_bart = graph_template %>>%
   po("learner", learner = lrn("regr.bart"))
 graph_bart = as_learner(graph_bart)
@@ -778,9 +815,7 @@ search_space_bart$add(
      regr.bart.ntree  = p_int(lower = 50, upper = 500))
 )
 # chatgpt returns this
-# n_trees = p_int(lower = 10, upper = 100),
 # n_chains = p_int(lower = 1, upper = 5),
-# k = p_int(lower = 1, upper = 10),
 # m_try = p_int(lower = 1, upper = 13),
 # nu = p_dbl(lower = 0.1, upper = 10),
 # alpha = p_dbl(lower = 0.01, upper = 1),
@@ -800,6 +835,7 @@ set_threads(graph_lightgbm, n = threads)
 set_threads(graph_earth, n = threads)
 set_threads(graph_gbm, n = threads)
 set_threads(graph_rsm, n = threads)
+set_threads(graph_catboost, n = threads)
 
 
 # DESIGNS -----------------------------------------------------------------
@@ -837,9 +873,9 @@ designs_l = lapply(custom_cvs, function(cv_) {
 
     # objects for all autotuners
     measure_ = msr("portfolio_ret")
-    tuner_   = tnr("hyperband", eta = 4)
-    # tuner_   = tnr("mbo")
-    # term_evals = 50
+    # tuner_   = tnr("hyperband", eta = 4)
+    tuner_   = tnr("mbo")
+    term_evals = 20
 
     # auto tuner rf
     at_rf = auto_tuner(
@@ -848,7 +884,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_rf,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # auto tuner xgboost
@@ -858,7 +895,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_xgboost,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # auto tuner BART
@@ -868,7 +906,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_bart,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # auto tuner nnet
@@ -878,7 +917,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_nnet,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # auto tuner lightgbm
@@ -888,7 +928,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_lightgbm,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # auto tuner earth
@@ -898,7 +939,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_earth,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # auto tuner kknn
@@ -908,7 +950,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_kknn,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # auto tuner gbm
@@ -918,7 +961,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_gbm,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # auto tuner rsm
@@ -928,7 +972,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_rsm,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # auto tuner rsm
@@ -938,7 +983,19 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_bart,
-      terminator = trm("none")
+      # terminator = trm("none")
+      term_evals = term_evals
+    )
+
+    # auto tuner catboost
+    at_catboost = auto_tuner(
+      tuner = tuner_,
+      learner = graph_catboost,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_catboost,
+      # terminator = trm("none")
+      term_evals = term_evals
     )
 
     # outer resampling
@@ -950,7 +1007,7 @@ designs_l = lapply(custom_cvs, function(cv_) {
     design = benchmark_grid(
       tasks = task_,
       learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth,
-                      at_kknn, at_gbm, at_rsm, at_bart),
+                      at_kknn, at_gbm, at_rsm, at_bart, at_catboost),
       resamplings = customo_
     )
   })
@@ -964,7 +1021,7 @@ packages = c("data.table", "gausscov", "paradox", "mlr3", "mlr3pipelines",
              "mlr3tuning", "mlr3misc", "future", "future.apply",
              "mlr3extralearners")
 reg = makeExperimentRegistry(
-  file.dir = "./experiments",
+  file.dir = "./experiments2",
   seed = 1,
   packages = packages
 )

@@ -1,3 +1,4 @@
+options(warn = -1)
 library(data.table)
 library(gausscov)
 library(paradox)
@@ -105,7 +106,7 @@ UpdateBuffer = R6Class(
 
 # RUN JOB -----------------------------------------------------------------
 # load registry
-reg = loadRegistry("experiments")
+reg = loadRegistry("experiments2")
 # reg = loadRegistry("F:/H4-v9")
 
 # extract not  done ids
