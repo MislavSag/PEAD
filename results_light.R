@@ -29,10 +29,10 @@ rbind(ids_notdone, ids_done[job.id %in% results_files])
 
 # import already saved predictions
 fs::dir_ls("predictions")
-predictions = readRDS("predictions/predictions-20231023092108.rds")
+# predictions = readRDS("predictions/predictions-20231023092108.rds")
 
 # get results
-plan("multisession", workers = 8L)
+plan("multisession", workers = 4L)
 start_time = Sys.time()
 results = future_lapply(ids_done[, job.id], function(id_) {
   # bmr object
