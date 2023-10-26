@@ -29,7 +29,7 @@ rbind(ids_notdone, ids_done[job.id %in% results_files])
 
 # import already saved predictions
 fs::dir_ls("predictions")
-# predictions = readRDS("predictions/predictions-20231023092108.rds")
+# predictions = readRDS("predictions/predictions-20231025215620.rds")
 
 # get results
 plan("multisession", workers = 4L)
@@ -190,6 +190,14 @@ res = lapply(cols_sign_response_pos, function(x) {
 names(res) = cols_sign_response_pos
 res
 
+# check only sign ensamble performance
+res = lapply(cols_sign_response_neg, function(x) {
+  predictions_ensemble[get(x) == TRUE][
+    , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
+})
+names(res) = cols_sign_response_neg
+res
+
 # save to azure for QC backtest
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
 lapply(unique(predictions_ensemble$task), function(x) {
@@ -205,7 +213,7 @@ lapply(unique(predictions_ensemble$task), function(x) {
   y = unique(y)
 
   # remove where all false
-  y = y[response_sign_sign_pos13 == TRUE]
+  # y = y[response_sign_sign_pos13 == TRUE]
 
   # min and max date
   y[, min(date)]
@@ -284,7 +292,7 @@ backtest_data =  merge(spy, indicator, by = "date", all.x = TRUE, all.y = FALSE)
 backtest_data = backtest_data[date > indicator[, min(date)]]
 backtest_data = backtest_data[date < indicator[, max(date)]]
 backtest_data[, signal := 1]
-backtest_data[shift(ind_sd_ema) > 0.15, signal := 0]          # 1
+backtest_data[shift(ind) < 0, signal := 0]          # 1
 # backtest_data[shift(diff(mean_response_agg_ema, 5)) < -0.01, signal := 0] # 2
 backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1))])
 charts.PerformanceSummary(backtest_data_xts)
@@ -338,6 +346,4 @@ gausscov = rbindlist(gausscov, idcol = "task")
 # most important vars across all tasks
 gausscov[, sum(value), by = variable][order(V1)][, tail(.SD, 10)]
 gausscov[, sum(value), by = .(task, variable)][order(V1)][, tail(.SD, 5), by = task]
-
-
 
