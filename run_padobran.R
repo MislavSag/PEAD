@@ -457,15 +457,15 @@ search_space_template = ps(
   # subsample for hyperband
   # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
-  dropnacol.affect_columns = p_fct(
-    levels = c("0.01", "0.05", "0.10"),
-    trafo = function(x, param_set) {
-      switch(x,
-             "0.01" = 0.01,
-             "0.05" = 0.05,
-             "0.10" = 0.1)
-    }
-  ),
+  # dropnacol.affect_columns = p_fct(
+  #   levels = c("0.01", "0.05", "0.10"),
+  #   trafo = function(x, param_set) {
+  #     switch(x,
+  #            "0.01" = 0.01,
+  #            "0.05" = 0.05,
+  #            "0.10" = 0.1)
+  #   }
+  # ),
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -513,15 +513,15 @@ search_space_xgboost = ps(
   # subsample for hyperband
   # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
-  dropnacol.affect_columns = p_fct(
-    levels = c("0.01", "0.05", "0.10"),
-    trafo = function(x, param_set) {
-      switch(x,
-             "0.01" = 0.01,
-             "0.05" = 0.05,
-             "0.10" = 0.1)
-    }
-  ),
+  # dropnacol.affect_columns = p_fct(
+  #   levels = c("0.01", "0.05", "0.10"),
+  #   trafo = function(x, param_set) {
+  #     switch(x,
+  #            "0.01" = 0.01,
+  #            "0.05" = 0.05,
+  #            "0.10" = 0.1)
+  #   }
+  # ),
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -602,15 +602,15 @@ search_space_kknn = ps(
   # subsample for hyperband
   # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
-  dropnacol.affect_columns = p_fct(
-    levels = c("0.01", "0.05", "0.10"),
-    trafo = function(x, param_set) {
-      switch(x,
-             "0.01" = 0.01,
-             "0.05" = 0.05,
-             "0.10" = 0.1)
-    }
-  ),
+  # dropnacol.affect_columns = p_fct(
+  #   levels = c("0.01", "0.05", "0.10"),
+  #   trafo = function(x, param_set) {
+  #     switch(x,
+  #            "0.01" = 0.01,
+  #            "0.05" = 0.05,
+  #            "0.10" = 0.1)
+  #   }
+  # ),
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -735,15 +735,15 @@ search_space_template = ps(
   # subsample for hyperband
   # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
-  dropnacol.affect_columns = p_fct(
-    levels = c("0.01", "0.05", "0.10"),
-    trafo = function(x, param_set) {
-      switch(x,
-             "0.01" = 0.01,
-             "0.05" = 0.05,
-             "0.10" = 0.1)
-    }
-  ),
+  # dropnacol.affect_columns = p_fct(
+  #   levels = c("0.01", "0.05", "0.10"),
+  #   trafo = function(x, param_set) {
+  #     switch(x,
+  #            "0.01" = 0.01,
+  #            "0.05" = 0.05,
+  #            "0.10" = 0.1)
+  #   }
+  # ),
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
