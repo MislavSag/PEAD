@@ -2,7 +2,7 @@ options(progress_enabled = FALSE)
 
 library(data.table)
 library(checkmate)
-library(tiledb)
+library(arrow)
 library(httr)
 library(fredr)
 library(alfred)
@@ -16,6 +16,8 @@ library(DescTools)
 library(reticulate)
 library(findata)
 library(AzureStor)
+library(fs)
+library(duckdb)
 # Python environment and python modules
 # Instructions: some functions use python modules. Steps to use python include:
 # 1. create new conda environment:
@@ -38,37 +40,35 @@ warnigns = reticulate::import("warnings", convert = FALSE)
 warnigns$filterwarnings('ignore')
 
 
-
 # SET UP ------------------------------------------------------------------
 # check if we have all necessary env variables
-assert_choice("AWS-ACCESS-KEY", names(Sys.getenv()))
-assert_choice("AWS-SECRET-KEY", names(Sys.getenv()))
-assert_choice("AWS-REGION", names(Sys.getenv()))
+# assert_choice("AWS-ACCESS-KEY", names(Sys.getenv()))
+# assert_choice("AWS-SECRET-KEY", names(Sys.getenv()))
+# assert_choice("AWS-REGION", names(Sys.getenv()))
 assert_choice("BLOB-ENDPOINT", names(Sys.getenv()))
 assert_choice("BLOB-KEY", names(Sys.getenv()))
 assert_choice("APIKEY-FMPCLOUD", names(Sys.getenv()))
 assert_choice("FRED-KEY", names(Sys.getenv()))
 
-# set credentials
-config <- tiledb_config()
-config["vfs.s3.aws_access_key_id"] <- Sys.getenv("AWS-ACCESS-KEY")
-config["vfs.s3.aws_secret_access_key"] <- Sys.getenv("AWS-SECRET-KEY")
-config["vfs.s3.region"] <- Sys.getenv("AWS-REGION")
-context_with_config <- tiledb_ctx(config)
-fredr_set_key(Sys.getenv("FRED-KEY"))
+# # set credentials
+# config <- tiledb_config()
+# config["vfs.s3.aws_access_key_id"] <- Sys.getenv("AWS-ACCESS-KEY")
+# config["vfs.s3.aws_secret_access_key"] <- Sys.getenv("AWS-SECRET-KEY")
+# config["vfs.s3.region"] <- Sys.getenv("AWS-REGION")
+# context_with_config <- tiledb_ctx(config)
+# fredr_set_key(Sys.getenv("FRED-KEY"))
+
+# global vars
+PATH = "F:/equity/usa"
 
 # parameters
 strategy = "PEAD"  # PEAD (for predicting post announcement drift) or PRE (for predicting pre announcement)
 events_data <- "intersection" # data source, one of "fmp", "investingcom", "intersection"
 
 
-
 # EARING ANNOUNCEMENT DATA ------------------------------------------------
-# get events data from FMP
-arr <- tiledb_array("s3://equity-usa-earningsevents", as.data.frame = TRUE)
-events <- arr[]
-events <- as.data.table(events)
-setorder(events, date)
+# get events data
+events = read_parquet(fs::path(PATH, "fundamentals", "earning_announcements", ext = "parquet"))
 
 # coarse filtering
 events <- events[date < Sys.Date()]                 # remove announcements for today
@@ -99,10 +99,10 @@ print(paste0("Remove ", nrow(events[!(symbol %in% us_symbols)]),
 events <- events[symbol %in% us_symbols] # keep only US stocks
 
 # get investing.com data
-arr <- tiledb_array("s3://equity-usa-earningsevents-investingcom",
-                    as.data.frame = TRUE)
-investingcom_ea <- arr[]
-investingcom_ea <- as.data.table(investingcom_ea)
+investingcom_ea = read_parquet(fs::path(PATH,
+                                        "fundamentals",
+                                        "earning_announcements_investingcom",
+                                        ext = "parquet"))
 if (strategy == "PEAD") {
   investingcom_ea <- na.omit(investingcom_ea, cols = c("eps", "eps_forecast"))
 }
@@ -152,30 +152,43 @@ if (events_data == "intersection") {
 # remove duplicated events
 events <- unique(events, by = c("symbol", "date"))
 
+# check last date
+events[, max(date)]
+events[date == max(date), symbol]
+
 
 # MARKET DATA AND FUNDAMENTALS ---------------------------------------------
-# import market data and fundamentals
-factors = Factors$new()
-factors_l = factors$get_factors()
-price_factors <- factors_l$prices_factos
-fundamental_factors <- factors_l$fundamental_factors
-macro <- factors_l$macro
-
-# free resources
-rm(factors_l)
-gc()
+# import factors
+prices_dt = read_parquet(fs::path(PATH,
+                                  "predictors-daily",
+                                  "factors",
+                                  "prices_factors",
+                                  ext = "parquet"))
 
 # filter dates and symbols
-prices_dt <- unique(price_factors, by = c("symbol", "date"))
-setorder(prices_dt, symbol, date)
+prices_dt <- prices_dt[date > as.Date("2009-01-01")]
 prices_dt <- prices_dt[symbol %in% c(unique(events$symbol), "SPY")]
-prices_dt <- prices_dt[date > as.Date("2010-01-01")]
+prices_dt <- unique(prices_dt, by = c("symbol", "date"))
+setorder(prices_dt, symbol, date)
 prices_n <- prices_dt[, .N, by = symbol]
 prices_n <- prices_n[which(prices_n$N > 700)]  # remove prices with only 700 or less observations
 prices_dt <- prices_dt[symbol %in% prices_n$symbol]
 
-# save SPY for later and keep only events symbols
-spy <- prices_dt[symbol == "SPY", .(symbol, date, open, high, low, close, volume, returns)]
+# SPY data
+con <- dbConnect(duckdb::duckdb())
+symbol = "SPY"
+query <- sprintf("
+  SELECT *
+  FROM 'F:/equity/daily_fmp_all.csv'
+  WHERE Symbol = '%s'
+", symbol)
+data_ <- dbGetQuery(con, query)
+dbDisconnect(con)
+data_ = as.data.table(data_)
+data_ = data_[, .(date = date, close = adjClose)]
+data_[, returns := close / shift(close) - 1]
+spy = na.omit(data_)
+
 
 
 # REGRESSION LABELING ----------------------------------------------------------
@@ -195,10 +208,10 @@ prices_dt[, sd_44 := roll::roll_sd(close / shift(close, 1L) - 1, 44), by = "symb
 prices_dt[, sd_66 := roll::roll_sd(close / shift(close, 1L) - 1, 66), by = "symbol"]
 
 # calculate spy returns
-spy[, ret_5_spy := shift(close, -5L, "shift") / shift(close, -1L, "shift") - 1, by = "symbol"]
-spy[, ret_22_spy := shift(close, -21L, "shift") / shift(close, -1L, "shift") - 1, by = "symbol"]
-spy[, ret_44_spy := shift(close, -43L, "shift") / shift(close, -1L, "shift") - 1, by = "symbol"]
-spy[, ret_66_spy := shift(close, -65L, "shift") / shift(close, -1L, "shift") - 1, by = "symbol"]
+spy[, ret_5_spy := shift(close, -5L, "shift") / shift(close, -1L, "shift") - 1]
+spy[, ret_22_spy := shift(close, -21L, "shift") / shift(close, -1L, "shift") - 1]
+spy[, ret_44_spy := shift(close, -43L, "shift") / shift(close, -1L, "shift") - 1]
+spy[, ret_66_spy := shift(close, -65L, "shift") / shift(close, -1L, "shift") - 1]
 
 # calculate excess returns
 prices_dt <- merge(prices_dt,
@@ -229,14 +242,15 @@ prices_dt[, `:=`(ret_5 = NULL, ret_22 = NULL, ret_44 = NULL, ret_66 = NULL,
 #                                          "ret_excess_stand_66"))
 
 
-
 # MERGE MARKET DATA, EVENTS AND CLASSIF LABELS ---------------------------------
 # merge clf_data and labels
-dataset <- merge(events,
-                 prices_dt[, .(symbol, date,
-                               ret_excess_stand_5, ret_excess_stand_22,
-                               ret_excess_stand_44, ret_excess_stand_66,
-                               amc_return, bmo_return)],
+cols_ = colnames(prices_dt)
+cols_keep_prices = c(
+  "symbol", "date", "ret_excess_stand_5", "ret_excess_stand_22",
+  "ret_excess_stand_44", "ret_excess_stand_66", "amc_return", "bmo_return",
+  cols_[which(cols_ == "e"):(which(cols_ == "amc_return")-1)]
+)
+dataset <- merge(events, prices_dt[, ..cols_keep_prices],
                  by = c("symbol", "date"), all.x = TRUE, all.y = FALSE)
 
 # extreme labeling
@@ -286,7 +300,6 @@ dataset[, (bin_decile_col_names) := lapply(.SD, function(x) {
 setorderv(dataset, c("symbol", "date"))
 
 
-
 # FEATURES ----------------------------------------------------------------
 # Ohlcv feaures
 OhlcvInstance = Ohlcv$new(prices_dt[, .(symbol, date, open, high, low, close, volume)],
@@ -298,11 +311,6 @@ if (strategy == "PEAD") {
   # ako je red u events amc. label je open_t+1 / close_t; lag je -1L
   # ako je red u events bmo. label je open_t / close_t-1; lag je -2L
 }
-
-# free memory
-rm(prices_events)
-gc()
-
 
 # util function that returns most recently saved predictor object
 get_latest = function(predictors = "RollingExuberFeatures") {
@@ -480,7 +488,7 @@ if (length(at_) > 0) {
   RollingTheftCatch22Features[, c("feasts____22_5", "feasts____25_22") := NULL]
   # cols = colnames(RollingTheftCatch22Features)
   # RollingTheftCatch22FeaturesNew = RollingTheftCatch22FeaturesNew[, ..cols]
-  RollingTheftCatch22FeaturesNewMerged = rbind(RollingTheftCatch22Features, RollingTheftCatch22FeaturesNew)
+  RollingTheftCatch22FeaturesNewMerged = rbind(RollingTheftCatch22Features, RollingTheftCatch22FeaturesNew, fill = TRUE)
   time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
   fwrite(RollingTheftCatch22FeaturesNewMerged, paste0("D:/features/PEAD-RollingTheftCatch22Features-", time_, ".csv"))
 }
@@ -563,21 +571,20 @@ if (length(at_) > 0) {
 # Fracdiff
 print("Fradiff predictors")
 at_ = get_at_(RollingFracdiffFeatures)
-at_ = ifelse(at_)
 if (length(at_) > 0) {
-  RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6L,
-                                                        lag = lag_, at = at_, filter = "haar")
-  RollingWaveletArimaFeaturesNew = RollingWaveletArimaInstance$get_rolling_features(OhlcvInstance)
+  RollingFracdiffInstance = RollingFracdiff$new(windows = 252, workers = 6L,
+                                                lag = lag_, at = at_,
+                                                nar = c(1, 2), nma = c(1, 2),
+                                                bandw_exp = c(0.1, 0.5, 0.9))
+  RollingFracdiffFeaturesNew = RollingFracdiffInstance$get_rolling_features(OhlcvInstance)
   gc()
 
   # save
-  RollingWaveletArimaFeaturesNew[, date := as.IDate(date)]
-  RollingWaveletArimaFeaturesNewMerged = rbind(RollingWaveletArimaFeatures, RollingWaveletArimaFeaturesNew)
+  RollingFracdiffFeaturesNew[, date := as.IDate(date)]
+  RollingFracdiffFeaturesNewMerged = rbind(RollingFracdiffFeatures, RollingFracdiffFeaturesNew)
   time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-  fwrite(RollingWaveletArimaFeaturesNewMerged, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
+  fwrite(RollingFracdiffFeaturesNewMerged, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
 }
-
-
 
 # prepare arguments for features
 prices_events <- merge(prices_dt, dataset[, .(symbol, date, eps)],
@@ -593,6 +600,9 @@ OhlcvFeaturesSet = OhlcvFeaturesInit$get_ohlcv_features(OhlcvInstance)
 OhlcvFeaturesSetSample <- OhlcvFeaturesSet[at_ - lag_]
 setorderv(OhlcvFeaturesSetSample, c("symbol", "date"))
 # DEBUG
+events[date == max(date)]
+events[date == max(date), symbol]
+OhlcvFeaturesSet[symbol %in% events[date == max(date), symbol]]
 head(dataset[, .(symbol, date)])
 head(OhlcvFeaturesSetSample[symbol == "A", .(symbol, date)])
 tail(dataset[, .(symbol, date)], 10)
@@ -602,11 +612,10 @@ OhlcvFeaturesSetSample[symbol == "ZYXI", .(symbol, date)]
 rm(OhlcvFeaturesSet)
 gc()
 
-# save Ohlcv data
-time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-fwrite(OhlcvFeaturesSetSample, paste0("D:/features/PEAD-OhlcvFeaturesSetSample-", time_, ".csv"))
-
-
+# THINK THIS IS NOT NECESSARY
+# # save Ohlcv data
+# time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+# fwrite(OhlcvFeaturesSetSample, paste0("D:/features/PEAD-OhlcvFeaturesSetSample-", time_, ".csv"))
 
 # util function that returns most recently saved predictor object
 get_latest = function(predictors = "RollingExuberFeatures") {
@@ -616,7 +625,7 @@ get_latest = function(predictors = "RollingExuberFeatures") {
 }
 
 # import all saved predictors
-OhlcvFeaturesSetSample = fread(get_latest("OhlcvFeaturesSetSample"))
+# OhlcvFeaturesSetSample = fread(get_latest("OhlcvFeaturesSetSample"))
 RollingBidAskFeatures = fread(get_latest("RollingBidAskFeatures"))
 RollingBackCusumFeatures = fread(get_latest("RollingBackCusumFeatures"))
 RollingExuberFeatures = fread(get_latest("RollingExuberFeatures"))
@@ -626,7 +635,8 @@ RollingTheftCatch22Features = fread(get_latest("RollingTheftCatch22Features"))
 RollingTheftTsfelFeatures = fread(get_latest("RollingTheftTsfelFeatures"))
 RollingTsfeaturesFeatures = fread(get_latest("RollingTsfeaturesFeatures"))
 # RollingQuarksFeatures = fread(get_latest("RollingQuarksFeatures"))
-RollingWaveletArimaFeatures = fread(get_latest("RollingWaveletArimaFeatures"))
+# RollingWaveletArimaFeatures = fread(get_latest("RollingWaveletArimaFeatures")) # TODO: add i next itertion
+# RollingFracdiffFeatures = fread(get_latest("RollingFracdiffFeatures")) # TODO: add i next itertion
 
 # merge all features test
 rolling_predictors <- Reduce(
@@ -640,9 +650,10 @@ rolling_predictors <- Reduce(
     RollingGpdFeatures,
     RollingTheftCatch22Features,
     RollingTheftTsfelFeatures,
-    RollingTsfeaturesFeatures,
+    RollingTsfeaturesFeatures
     # RollingQuarksFeatures,
-    RollingWaveletArimaFeatures
+    # RollingWaveletArimaFeatures # TODO Add this in next iteration
+    # RollingFracdiffFeatures     # TODO Add this in next iteration
   )
 )
 
@@ -662,6 +673,9 @@ tail(rolling_predictors[symbol == s, 1:5])
 rolling_predictors[, date_rolling := date]
 OhlcvFeaturesSetSample[, date_ohlcv := date]
 features <- rolling_predictors[OhlcvFeaturesSetSample, on = c("symbol", "date"), roll = Inf]
+
+# check last date
+features[, max(date)]
 
 # check for duplicates
 features[duplicated(features[, .(symbol, date)]), .(symbol, date)]
@@ -695,8 +709,17 @@ features[, `:=`(
   eps_diff = (eps - epsEstimated + 0.00001) / (epsEstimated + 0.00001)
 )]
 
+# import fundamnetal fators
+fundamentals = read_parquet(fs::path(PATH,
+                                     "predictors-daily",
+                                     "factors",
+                                     "fundamental_factors",
+                                     ext = "parquet"))
+
 # clean fundamentals
-fundamentals <- fundamental_factors[date > as.Date("2009-01-01")]
+fundamentals = fundamentals[date > as.Date("2009-01-01")]
+fundamentals[, acceptedDateTime := as.POSIXct(acceptedDate, tz = "America/New_York")]
+fundamentals[, acceptedDate := as.Date(acceptedDateTime)]
 fundamentals[, acceptedDateFundamentals := acceptedDate]
 data.table::setnames(fundamentals, "date", "fundamental_date")
 fundamentals <- unique(fundamentals, by = c("symbol", "acceptedDate"))
@@ -707,56 +730,67 @@ features = fundamentals[features, on = c("symbol", "acceptedDate" = "date_ohlcv"
 features[, .(symbol, acceptedDate, acceptedDateTime, date_day_after_event, date)]
 
 # remove unnecesary columns
-features[, `:=`(period = NULL, link = NULL, finalLink = NULL, reportedCurrency = NULL)]
+features[, `:=`(period = NULL, link = NULL, finalLink = NULL,
+                reportedCurrency = NULL, cik = NULL, calendarYear = NULL)]
 features[symbol == "AAPL", .(symbol, fundamental_date, acceptedDate,
                              acceptedDateFundamentals, date_day_after_event, date)]
 
 # convert char features to numeric features
 char_cols <- features[, colnames(.SD), .SDcols = is.character]
-char_cols <- setdiff(char_cols, c("symbol", "time", "right_time"))
+char_cols <- setdiff(char_cols, c("symbol", "time", "right_time", "industry", "sector"))
 features[, (char_cols) := lapply(.SD, as.numeric), .SDcols = char_cols]
 
+
+
+############# ADD TRANSCRIPTS #################
 # import transcripts sentiments datadata
-config <- tiledb_config()
-config["vfs.s3.aws_access_key_id"] <- Sys.getenv("AWS-ACCESS-KEY")
-config["vfs.s3.aws_secret_access_key"] <- Sys.getenv("AWS-SECRET-KEY")
-config["vfs.s3.region"] <- "us-east-1"
-context_with_config <- tiledb_ctx(config)
-arr <- tiledb_array("s3://equity-transcripts-sentiments",
-                    as.data.frame = TRUE,
-                    query_layout = "UNORDERED",
-)
-system.time(transcript_sentiments <- arr[])
-tiledb_array_close(arr)
-sentiments_dt <- as.data.table(transcript_sentiments)
-setnames(sentiments_dt, "date", "time_transcript")
-attr(sentiments_dt$time, "tz") <- "UTC"
-sentiments_dt[, date := as.Date(time)]
-sentiments_dt[, time := NULL]
-cols_sentiment = colnames(sentiments_dt)[grep("FLS", colnames(sentiments_dt))]
+# config <- tiledb_config()
+# config["vfs.s3.aws_access_key_id"] <- Sys.getenv("AWS-ACCESS-KEY")
+# config["vfs.s3.aws_secret_access_key"] <- Sys.getenv("AWS-SECRET-KEY")
+# config["vfs.s3.region"] <- "us-east-1"
+# context_with_config <- tiledb_ctx(config)
+# arr <- tiledb_array("s3://equity-transcripts-sentiments",
+#                     as.data.frame = TRUE,
+#                     query_layout = "UNORDERED",
+# )
+# system.time(transcript_sentiments <- arr[])
+# tiledb_array_close(arr)
+# sentiments_dt <- as.data.table(transcript_sentiments)
+# setnames(sentiments_dt, "date", "time_transcript")
+# attr(sentiments_dt$time, "tz") <- "UTC"
+# sentiments_dt[, date := as.Date(time)]
+# sentiments_dt[, time := NULL]
+# cols_sentiment = colnames(sentiments_dt)[grep("FLS", colnames(sentiments_dt))]
 
 # merge with features
-features[, date_day_after_event_ := date_day_after_event]
-features <- sentiments_dt[features, on = c("symbol", "date" = "date_day_after_event_"), roll = Inf]
-features[, .(symbol, date, date_day_after_event, time_transcript, Not_FLS_positive)]
-features[1:50, .(symbol, date, date_day_after_event, time_transcript, Not_FLS_positive)]
+# features[, date_day_after_event_ := date_day_after_event]
+# features <- sentiments_dt[features, on = c("symbol", "date" = "date_day_after_event_"), roll = Inf]
+# features[, .(symbol, date, date_day_after_event, time_transcript, Not_FLS_positive)]
+# features[1:50, .(symbol, date, date_day_after_event, time_transcript, Not_FLS_positive)]
 
 # remove observations where transcripts are more than 2 days away
-features <- features[date - as.IDate(as.Date(time_transcript)) >= 3,
-                     (cols_sentiment) := NA]
-features[, ..cols_sentiment]
+# features <- features[date - as.IDate(as.Date(time_transcript)) >= 3,
+#                      (cols_sentiment) := NA]
+# features[, ..cols_sentiment]
+############# ADD TRANSCRIPTS ###############
+
+# import macro factors
+macros = read_parquet(fs::path(PATH,
+                               "predictors-daily",
+                               "factors",
+                               "macro_factors",
+                               ext = "parquet"))
 
 # macro data
 features[, date_day_after_event_ := date_day_after_event]
-macro[, date_macro := date]
-features <- macro[features, on = c("date" = "date_day_after_event_"), roll = Inf]
+macros[, date_macro := date]
+features <- macros[features, on = c("date" = "date_day_after_event_"), roll = Inf]
 features[, .(symbol, date, date_day_after_event, date_macro, vix)]
 
 # final checks for predictors
 any(duplicated(features[, .(symbol, date_day_after_event)]))
 features[duplicated(features[, .(symbol, date_day_after_event)]), .(symbol, date_day_after_event)]
 features[duplicated(features[, .(symbol, date)]), .(symbol, date)]
-
 
 
 # FEATURES SPACE ----------------------------------------------------------
@@ -772,7 +806,9 @@ cols_remove <- c("trading_date_after_event", "time", "datetime_investingcom",
                  "same_announce_time", "eps", "epsEstimated", "revenue", "revenueEstimated",
                  "same_announce_time", "time_transcript", "i.time",
                  # remove dates we don't need
-                 setdiff(colnames(features)[grep("date", colnames(features), ignore.case = TRUE)], c("date", "date_rolling"))
+                 setdiff(colnames(features)[grep("date", colnames(features), ignore.case = TRUE)], c("date", "date_rolling")),
+                 # remove columns with i - possible duplicates
+                 colnames(features)[grep("i\\.|\\.y", colnames(features))]
                  )
 cols_non_features <- c("symbol", "date", "date_rolling", "time", "right_time",
                        "ret_excess_stand_5", "ret_excess_stand_22", "ret_excess_stand_44", "ret_excess_stand_66",
@@ -780,8 +816,8 @@ cols_non_features <- c("symbol", "date", "date_rolling", "time", "right_time",
                        colnames(features)[grep("extreme", colnames(features))],
                        colnames(features)[grep("bin_simple", colnames(features))],
                        colnames(features)[grep("bin_decile", colnames(features))],
-                       "bmo_return", "amc_return",
-                       "open", "high", "low", "close", "volume", "returns")
+                       "bmo_return", "amc_return")
+                       # "open", "high", "low", "close", "volume", "returns")
 cols_features <- setdiff(colnames(features), c(cols_remove, cols_non_features))
 head(cols_features, 10)
 tail(cols_features, 500)
@@ -789,6 +825,7 @@ cols <- c(cols_non_features, cols_features)
 features <- features[, .SD, .SDcols = cols]
 
 # checks
+features[, max(date)]
 features[, .(symbol, date, date_rolling)]
 
 
@@ -796,7 +833,8 @@ features[, .(symbol, date, date_rolling)]
 # CLEAN DATA --------------------------------------------------------------
 # convert columns to numeric. This is important only if we import existing features
 clf_data <- copy(features)
-chr_to_num_cols <- setdiff(colnames(clf_data[, .SD, .SDcols = is.character]), c("symbol", "time", "right_time"))
+chr_to_num_cols <- setdiff(colnames(clf_data[, .SD, .SDcols = is.character]),
+                           c("symbol", "time", "right_time", "industry", "sector"))
 clf_data <- clf_data[, (chr_to_num_cols) := lapply(.SD, as.numeric), .SDcols = chr_to_num_cols]
 # int_to_num_cols <- colnames(clf_data[, .SD, .SDcols = is.integer])
 # clf_data <- clf_data[, (int_to_num_cols) := lapply(.SD, as.numeric), .SDcols = int_to_num_cols]
@@ -824,17 +862,24 @@ clf_data <- clf_data[is.finite(rowSums(clf_data[, .SD, .SDcols = is.numeric], na
 n_1 <- nrow(clf_data)
 print(paste0("Removing ", n_0 - n_1, " rows because of Inf values"))
 
+# final checks
+clf_data[, .(symbol, date, date_rolling)]
+features[, .(symbol, date, date_rolling)]
+features[, max(date)]
+clf_data[, max(date)]
+
 # save features
-time_ <- strftime(Sys.time(), "%Y%m%d%H%M%S")
-file_mame <- paste0("D:/features/pead-predictors-", time_, ".csv")
-fwrite(clf_data, file_mame)
+last_pead_date = strftime(clf_data[, max(date)], "%Y%m%d")
+file_name = paste0("pead-predictors-", last_pead_date, ".csv")
+file_name_local = fs::path("D:/features", file_name)
+fwrite(clf_data, file_name_local)
 
 # save to Azure blob
 endpoint = "https://snpmarketdata.blob.core.windows.net/"
 blob_key = readLines('./blob_key.txt')
 BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
 cont = storage_container(BLOBENDPOINT, "jphd")
-storage_write_csv(clf_data, cont, "pead-predictors-update.csv")
+storage_write_csv(clf_data, cont, file_name)
 
 
 
@@ -846,17 +891,6 @@ storage_write_csv(clf_data, cont, "pead-predictors-update.csv")
 # For non-time series data, you can compute the difference between two or more related features.
 # Squares, Cubes, and Higher-order Polynomials:
 #
-# �
-# 2
-# ,
-# �
-# 3
-# ,
-# …
-# x
-# 2
-#  ,x
-# 3
 #  ,… can capture non-linear relationships.
 # Interaction Features:
 #

@@ -14,7 +14,7 @@ endpoint = "https://snpmarketdata.blob.core.windows.net/"
 BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
 
 # load registry
-reg = loadRegistry("F:/H4", work.dir="F:/H4")
+reg = loadRegistry("F:/H4v2", work.dir="F:/H4v2")
 
 # used memory
 reg$status[!is.na(mem.used)]
@@ -28,13 +28,15 @@ ids_notdone = findNotDone(reg=reg)
 rbind(ids_notdone, ids_done[job.id %in% results_files])
 
 # import already saved predictions
-fs::dir_ls("predictions")
+# fs::dir_ls("predictions")
 # predictions = readRDS("predictions/predictions-20231025215620.rds")
 
 # get results
 plan("multisession", workers = 4L)
 start_time = Sys.time()
 results = future_lapply(ids_done[, job.id], function(id_) {
+  # id_ = 6819
+  print(id_)
   # bmr object
   bmrs = reduceResultsBatchmark(id_, store_backends = FALSE, reg = reg)
   bmrs_dt = as.data.table(bmrs)
@@ -70,7 +72,7 @@ predictions = rbindlist(results, fill = TRUE)
 time_ = strftime(Sys.time(), format = "%Y%m%d%H%M%S")
 file_name = paste0("predictions/predictions-", time_, ".rds")
 if (!fs::dir_exists("predictions")) fs::dir_create("predictions")
-# saveRDS(predictions, file_name)
+saveRDS(predictions, file_name)
 
 # import tasks
 tasks_files = dir_ls("F:/H4/problems")
