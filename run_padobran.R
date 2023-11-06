@@ -51,7 +51,7 @@ snakeToCamel <- function(snake_str) {
 print("Prepare data")
 
 # read predictors
-data_tbl <- fread("D:/features/pead-predictors-20231031.csv")
+data_tbl <- fread("pead-predictors-20231031.csv")
 
 # convert tibble to data.table
 DT = as.data.table(data_tbl)
