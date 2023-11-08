@@ -11,6 +11,7 @@ library(future)
 library(future.apply)
 library(batchtools)
 library(mlr3batchmark)
+library(AzureStor)
 
 
 # SETUP -------------------------------------------------------------------
@@ -916,7 +917,7 @@ packages = c("data.table", "gausscov", "paradox", "mlr3", "mlr3pipelines",
              "mlr3tuning", "mlr3misc", "future", "future.apply",
              "mlr3extralearners", "stats")
 reg = makeExperimentRegistry(
-  file.dir = "./experiments2",
+  file.dir = "./experiments",
   seed = 1,
   packages = packages
 )
@@ -946,3 +947,29 @@ apptainer run image.sif run_job.R
 sh_file_name = "run_ml.sh"
 file.create(sh_file_name)
 writeLines(sh_file, sh_file_name)
+
+# send zipped file to Azure
+folder_to_zip <- "C:/Users/Mislav/Documents/GitHub/PEAD/experiments"
+output_zip_file <- "experiments.zip"
+getDirSize <- function(dir) {
+  # List all files in the directory and its subdirectories
+  files <- list.files(dir, recursive = TRUE, full.names = TRUE)
+
+  # Get the size of each file
+  file_sizes <- sapply(files, function(x) file.info(x)$size)
+
+  # Calculate the total size
+  total_size <- sum(file_sizes, na.rm = TRUE)
+
+  return(total_size)
+}
+dir_size <- getDirSize(folder_to_zip)
+dir_size_gb <- dir_size / 2^30
+print(paste("Directory size:", formatC(dir_size_gb, format = "f", digits = 2), "GB"))
+utils::zip(zipfile = output_zip_file, files = folder_to_zip, flags = "-r")
+
+blob_key = readLines('./blob_key.txt')
+endpoint = "https://snpmarketdata.blob.core.windows.net/"
+BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
+cont = storage_container(BLOBENDPOINT, "jphd")
+storage_upload(cont, output_zip_file, "pead_experiment.zip")

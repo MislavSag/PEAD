@@ -14,7 +14,6 @@ library(batchtools)
 library(mlr3batchmark)
 library(checkmate)
 library(stringi)
-library(fs)
 library(R6)
 library(brew)
 
@@ -106,7 +105,7 @@ UpdateBuffer = R6Class(
 
 # RUN JOB -----------------------------------------------------------------
 # load registry
-reg = loadRegistry("experiments")
+reg = loadRegistry("experiment")
 # reg = loadRegistry("F:/H4-v9")
 
 # extract not  done ids
