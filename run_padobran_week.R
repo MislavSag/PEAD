@@ -282,7 +282,7 @@ mlr_measures$add("adjloss2", AdjLoss2)
 mlr_measures$add("portfolio_ret", PortfolioRet)
 
 
-# GRAPH V2 ----------------------------------------------------------------
+# LEARNERS ----------------------------------------------------------------
 # graph template
 gr = gunion(list(
   po("nop", id = "nop_union_pca"),
@@ -327,7 +327,7 @@ graph_template =
 graph_template$param_set
 search_space_template = ps(
   # subsample for hyperband
-  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
   # dropnacol.affect_columns = p_fct(
   #   levels = c("0.01", "0.05", "0.10"),
@@ -383,7 +383,7 @@ graph_xgboost = as_learner(graph_xgboost)
 as.data.table(graph_xgboost$param_set)[grep("depth", id), .(id, class, lower, upper, levels)]
 search_space_xgboost = ps(
   # subsample for hyperband
-  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
   # dropnacol.affect_columns = p_fct(
   #   levels = c("0.01", "0.05", "0.10"),
@@ -472,7 +472,7 @@ graph_kknn = as_learner(graph_kknn)
 as.data.table(graph_kknn$param_set)[, .(id, class, lower, upper, levels)]
 search_space_kknn = ps(
   # subsample for hyperband
-  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -536,6 +536,7 @@ as.data.table(graph_glmnet$param_set)[, .(id, class, lower, upper, levels)]
 search_space_glmnet = ps(
   # subsample for hyperband
   subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -602,7 +603,7 @@ search_space_glmnet = ps(
 # lightgbm graph
 # [LightGBM] [Fatal] Do not support special JSON characters in feature name.
 graph_template =
-  # po("subsample") %>>% # uncomment this for hyperparameter tuning
+  po("subsample") %>>% # uncomment this for hyperparameter tuning
   po("dropnacol", id = "dropnacol", cutoff = 0.05) %>>%
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
@@ -629,7 +630,7 @@ graph_template =
   po("unbranch", id = "filter_unbranch")
 search_space_template = ps(
   # subsample for hyperband
-  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
   # dropnacol.affect_columns = p_fct(
   #   levels = c("0.01", "0.05", "0.10"),
@@ -948,28 +949,28 @@ sh_file_name = "run_ml.sh"
 file.create(sh_file_name)
 writeLines(sh_file, sh_file_name)
 
-# send zipped file to Azure
-folder_to_zip <- "C:/Users/Mislav/Documents/GitHub/PEAD/experiments"
-output_zip_file <- "experiments.zip"
-getDirSize <- function(dir) {
-  # List all files in the directory and its subdirectories
-  files <- list.files(dir, recursive = TRUE, full.names = TRUE)
-
-  # Get the size of each file
-  file_sizes <- sapply(files, function(x) file.info(x)$size)
-
-  # Calculate the total size
-  total_size <- sum(file_sizes, na.rm = TRUE)
-
-  return(total_size)
-}
-dir_size <- getDirSize(folder_to_zip)
-dir_size_gb <- dir_size / 2^30
-print(paste("Directory size:", formatC(dir_size_gb, format = "f", digits = 2), "GB"))
-utils::zip(zipfile = output_zip_file, files = folder_to_zip, flags = "-r")
-
-blob_key = readLines('./blob_key.txt')
-endpoint = "https://snpmarketdata.blob.core.windows.net/"
-BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
-cont = storage_container(BLOBENDPOINT, "jphd")
-storage_upload(cont, output_zip_file, "pead_experiment.zip")
+# # send zipped file to Azure
+# folder_to_zip <- "C:/Users/Mislav/Documents/GitHub/PEAD/experiments"
+# output_zip_file <- "experiments.zip"
+# getDirSize <- function(dir) {
+#   # List all files in the directory and its subdirectories
+#   files <- list.files(dir, recursive = TRUE, full.names = TRUE)
+#
+#   # Get the size of each file
+#   file_sizes <- sapply(files, function(x) file.info(x)$size)
+#
+#   # Calculate the total size
+#   total_size <- sum(file_sizes, na.rm = TRUE)
+#
+#   return(total_size)
+# }
+# dir_size <- getDirSize(folder_to_zip)
+# dir_size_gb <- dir_size / 2^30
+# print(paste("Directory size:", formatC(dir_size_gb, format = "f", digits = 2), "GB"))
+# utils::zip(zipfile = output_zip_file, files = folder_to_zip, flags = "-r")
+#
+# blob_key = readLines('./blob_key.txt')
+# endpoint = "https://snpmarketdata.blob.core.windows.net/"
+# BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
+# cont = storage_container(BLOBENDPOINT, "jphd")
+# storage_upload(cont, output_zip_file, "pead_experiment.zip")
