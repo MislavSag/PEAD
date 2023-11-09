@@ -105,7 +105,7 @@ UpdateBuffer = R6Class(
 
 # RUN JOB -----------------------------------------------------------------
 # load registry
-reg = loadRegistry("experiment")
+reg = loadRegistry("experiments")
 # reg = loadRegistry("F:/H4-v9")
 
 # extract not  done ids
