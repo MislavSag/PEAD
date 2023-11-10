@@ -13,15 +13,18 @@ blob_key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJL
 endpoint = "https://snpmarketdata.blob.core.windows.net/"
 BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
 
+# globals
+PATH = "F:/H4week"
+
 # load registry
-reg = loadRegistry("F:/H4v2", work.dir="F:/H4v2")
+reg = loadRegistry(PATH, work.dir=PATH)
 
 # used memory
 reg$status[!is.na(mem.used)]
 reg$status[, max(mem.used, na.rm = TRUE)]
 
 # done jobs
-results_files = fs::path_ext_remove(fs::path_file(dir_ls("F:/H4/results")))
+results_files = fs::path_ext_remove(fs::path_file(dir_ls(fs::path(PATH, "results"))))
 ids_done = findDone(reg=reg)
 ids_done = ids_done[job.id %in% results_files]
 ids_notdone = findNotDone(reg=reg)
@@ -35,7 +38,7 @@ rbind(ids_notdone, ids_done[job.id %in% results_files])
 plan("multisession", workers = 4L)
 start_time = Sys.time()
 results = future_lapply(ids_done[, job.id], function(id_) {
-  # id_ = 6819
+  # id_ = 100
   print(id_)
   # bmr object
   bmrs = reduceResultsBatchmark(id_, store_backends = FALSE, reg = reg)
@@ -193,11 +196,11 @@ names(res) = cols_sign_response_pos
 res
 
 # check only sign ensamble performance
-res = lapply(cols_sign_response_neg, function(x) {
+res = lapply(cols_sign_response_neg[1:5], function(x) { # TODO: REMOVE indexing later
   predictions_ensemble[get(x) == TRUE][
     , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
 })
-names(res) = cols_sign_response_neg
+names(res) = cols_sign_response_neg[1:5]
 res
 
 # save to azure for QC backtest
