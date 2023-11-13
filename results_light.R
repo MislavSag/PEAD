@@ -38,7 +38,7 @@ rbind(ids_notdone, ids_done[job.id %in% results_files])
 plan("multisession", workers = 4L)
 start_time = Sys.time()
 results = future_lapply(ids_done[, job.id], function(id_) {
-  # id_ = 100
+  # id_ = 2110
   print(id_)
   # bmr object
   bmrs = reduceResultsBatchmark(id_, store_backends = FALSE, reg = reg)
