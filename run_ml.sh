@@ -3,8 +3,8 @@
 
 #PBS -N PEAD
 #PBS -l ncpus=4
-#PBS -l mem=30GB
-#PBS -J 1-2802
+#PBS -l mem=40GB
+#PBS -J 1-2584
 #PBS -o experiments/logs
 #PBS -j oe
 
