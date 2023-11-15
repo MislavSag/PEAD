@@ -78,7 +78,7 @@ if (!fs::dir_exists("predictions")) fs::dir_create("predictions")
 saveRDS(predictions, file_name)
 
 # import tasks
-tasks_files = dir_ls("F:/H4/problems")
+tasks_files = dir_ls(fs::path(PATH, "problems"))
 tasks = lapply(tasks_files, readRDS)
 names(tasks) = lapply(tasks, function(t) t$data$id)
 tasks
@@ -138,6 +138,7 @@ unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c(
 unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task", "cv")]
 
 # accuracy by ids
+pr = PortfolioRet$new()
 measures = function(t, res) {
   list(acc   = mlr3measures::acc(t, res),
        fbeta = mlr3measures::fbeta(t, res, positive = "1"),
@@ -179,9 +180,13 @@ predictions_ensemble[, (cols_sign_response_neg) := lapply(sign_response_seq, fun
 # cols_ = colnames(predictions_dt_ensemble)[24:ncol(predictions_dt_ensemble)]
 # predictions_dt_ensemble[, lapply(.SD, function(x) sum(x == TRUE)), .SDcols = cols_]
 
+predictions_ensemble[median_response > 0 & sd_response < 0.15, .(tr = truth_sign, res = 1)][, sum(tr == res) / length(tr)]
+
+
 # check only sign ensamble performance
-res = lapply(cols_sign_response_pos, function(x) {
-  predictions_ensemble[get(x) == TRUE][
+res = lapply(cols_sign_response_pos[1:5], function(x) {
+  print(x)
+  predictions_ensemble[get(x) == TRUE & sd_response < 0.3][
     , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
 })
 names(res) = cols_sign_response_pos
@@ -210,10 +215,12 @@ lapply(unique(predictions_ensemble$task), function(x) {
   # x = "taskRetWeek"
 
   # prepare data
+  # y = predictions_ensemble[median_response > 0 & sd_response < 0.15]
+  # y = y[, response_sign_sign_pos16 := TRUE]
   y = predictions_ensemble[task == x]
   y = na.omit(y)
   cols = colnames(y)[grep("response_sign", colnames(y))]
-  cols = c("symbol", "date", "epsDiff", cols)
+  cols = c("symbol", "date", "epsDiff", "mean_response", "sd_response", cols)
   y = y[, ..cols]
   y = unique(y)
 

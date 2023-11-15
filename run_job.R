@@ -138,8 +138,13 @@ result = execJob(job)
 writeRDS(result, file = getResultFiles(jc, id), compress = jc$compress)
 
 # memory usage
-memory.mult = c(if (.Machine$sizeof.pointer == 4L) 28L else 56L, 8L)
-memory_used = sum(gc()[, 1L] * memory.mult) / 1000000L
+tryCatch({
+  memory.mult = c(if (.Machine$sizeof.pointer == 4L) 28L else 56L, 8L)
+  gc_info <- gc(verbose = FALSE)
+  memory_used = sum(gc_info[, 1L] * memory.mult) / 1000000L
+}, error = function(e) {
+  memory_used <- 1000  # Set to NA or some default value in case of error
+})
 
 # updates
 update$done = batchtools:::ustamp()
