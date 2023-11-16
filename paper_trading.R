@@ -47,6 +47,9 @@ snakeToCamel <- function(snake_str) {
   return(camel_case_str)
 }
 
+# path to save output
+mlr3_save_path = "D:/paper"
+
 
 # PREPARE DATA ------------------------------------------------------------
 print("Prepare data")
@@ -737,7 +740,7 @@ set_threads(graph_glmnet, n = threads)
 
 # DESIGNS -----------------------------------------------------------------
 # create designs
-designs_l = lapply(custom_cvs, function(cv_) {
+lapply(custom_cvs, function(cv_) {
   # debug
   # cv_ = custom_cvs[[1]]
 
@@ -905,13 +908,12 @@ designs_l = lapply(custom_cvs, function(cv_) {
                     at_kknn, at_gbm, at_rsm, at_bart, at_catboost, at_glmnet),
     resamplings = customo_
   )
+
+  # benchmark
+  bmr = benchmark(design, store_models = FALSE)
+
+  # save locally and to list
+  time_ = format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  file_name = paste0("paper-pead", cv_$custom_inner$iters, "-", time_, ".rds")
+  saveRDS(bmr, file.path(mlr3_save_path, file_name))
 })
-designs = do.call(rbind, designs_l)
-
-# benchmark
-bmr = benchmark(designs, store_models = FALSE)
-
-# save locally and to list
-time_ = format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-file_name = paste0("cv-", cv_$custom_inner$iters, "-", i, "-", time_, ".rds")
-saveRDS(bmr, file.path(mlr3_save_path, file_name))

@@ -124,10 +124,6 @@ i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
 buf = UpdateBuffer$new(jc$jobs$job.id)
 update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_character_, mem.used = NA_real_)
 
-
-batchtools:::getSeed(jc$seed, row$job.id)
-
-
 # get job
 job = Job$new(file.dir = jc$file.dir,
               reader = reader,
