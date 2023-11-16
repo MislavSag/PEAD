@@ -125,18 +125,22 @@ buf = UpdateBuffer$new(jc$jobs$job.id)
 update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_character_, mem.used = NA_real_)
 
 # get job
-job = Job$new(file.dir = jc$file.dir,
-              reader = reader,
-              id = jc$jobs[i]$job.id,
-              job.pars = jc$jobs[i]$job.pars[[1L]],
-              seed = 1 + jc$jobs[i],
-              resources = jc$resources)
+cat("Get Job")
+job = batchtools:::Job$new(
+  file.dir = jc$file.dir,
+  reader = reader,
+  id = jc$jobs[i]$job.id,
+  job.pars = jc$jobs[i]$job.pars[[1L]],
+  seed = 1 + jc$jobs[i],
+  resources = jc$resources
+)
 # job = batchtools:::getJob(jc, i)
 id = job$id
 
 cat("CHANGE JOB ID MANNUALY", nrow(jc$jobs), "!!!")
 
 # execute job
+cat("Execute Job")
 gc(reset = TRUE)
 update$started = batchtools:::ustamp()
 result = execJob(job)
