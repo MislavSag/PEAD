@@ -106,14 +106,15 @@ UpdateBuffer = R6Class(
 # RUN JOB -----------------------------------------------------------------
 # load registry
 reg = loadRegistry("experiments")
-# reg = loadRegistry("F:/H4-v9")
 
 # extract not  done ids
 ids_not_done = findNotDone(reg=reg)
 
 # create job collection
 resources = list(ncpus = 4) # this shouldnt be important
-jc = makeJobCollection(ids_not_done, resources = resources, reg = reg)
+jc = makeJobCollection(ids_not_done,
+                       resources = resources,
+                       reg = reg)
 
 # extract integer
 i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
@@ -123,8 +124,18 @@ i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
 buf = UpdateBuffer$new(jc$jobs$job.id)
 update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_character_, mem.used = NA_real_)
 
+
+batchtools:::getSeed(jc$seed, row$job.id)
+
+
 # get job
-job = batchtools:::getJob(jc, i)
+job = Job$new(file.dir = jc$file.dir,
+              reader = reader,
+              id = jc$jobs[i]$job.id,
+              job.pars = jc$jobs[i]$job.pars[[1L]],
+              seed = 1 + jc$jobs[i],
+              resources = jc$resources)
+# job = batchtools:::getJob(jc, i)
 id = job$id
 
 cat("CHANGE JOB ID MANNUALY", nrow(jc$jobs), "!!!")
