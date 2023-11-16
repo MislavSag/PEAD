@@ -118,7 +118,7 @@ jc = makeJobCollection(ids_not_done,
 
 # extract integer
 i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
-# i = 10L
+# i = 2L
 
 # start buffer
 buf = UpdateBuffer$new(jc$jobs$job.id)
@@ -126,16 +126,17 @@ update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_ch
 
 # get job
 cat("Get Job \n")
-job = batchtools:::Job$new(
-  file.dir = jc$file.dir,
-  reader = batchtools:::RDSReader$new(FALSE),
-  id = jc$jobs[i]$job.id,
-  job.pars = jc$jobs[i]$job.pars[[1L]],
-  seed = 1 + jc$jobs[i]$job.id,
-  resources = jc$resources
-)
-# job = batchtools:::getJob(jc, i)
-id = job$id
+# job = batchtools:::Job$new(
+#   file.dir = jc$file.dir,
+#   reader = batchtools:::RDSReader$new(FALSE),
+#   id = jc$jobs[i]$job.id,
+#   job.pars = jc$jobs[i]$job.pars[[1L]],
+#   seed = 1 + jc$jobs[i]$job.id,
+#   resources = jc$resources
+# )
+job = batchtools:::getJob(jc, i)
+id =
+
 
 cat("CHANGE JOB ID MANNUALY", nrow(jc$jobs), "!!!")
 
@@ -145,7 +146,7 @@ gc(reset = TRUE)
 update$started = batchtools:::ustamp()
 result = execJob(job)
 
-# save ojb
+# save job
 writeRDS(result, file = getResultFiles(jc, id), compress = jc$compress)
 
 # memory usage
