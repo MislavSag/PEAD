@@ -128,7 +128,7 @@ update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_ch
 cat("Get Job")
 job = batchtools:::Job$new(
   file.dir = jc$file.dir,
-  reader = reader,
+  reader = batchtools:::RDSReader$new(FALSE),
   id = jc$jobs[i]$job.id,
   job.pars = jc$jobs[i]$job.pars[[1L]],
   seed = 1 + jc$jobs[i],
