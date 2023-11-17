@@ -135,7 +135,7 @@ cat("Get Job \n")
 #   resources = jc$resources
 # )
 job = batchtools:::getJob(jc, i)
-id =
+id = job$id
 
 
 cat("CHANGE JOB ID MANNUALY", nrow(jc$jobs), "!!!")
