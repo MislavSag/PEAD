@@ -50,8 +50,8 @@ PipeOpWinsorizeSimple = R6::R6Class(
     },
 
     .transform_dt  = function(dt, levels) {
-      dt = dt[, Map(function(a, b) ifelse(a < b, b, a), .SD, self$state$minvals)]
-      dt = dt[, Map(function(a, b) ifelse(a > b, b, a), .SD, self$state$maxvals)]
+      dt = dt[, Map(function(a, b) fifelse(a < b, b, a), .SD, self$state$minvals)]
+      dt = dt[, Map(function(a, b) fifelse(a > b, b, a), .SD, self$state$maxvals)]
       dt
     }
   )

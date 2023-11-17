@@ -128,6 +128,15 @@ DT[, .(symbol, date, weekid, yearmonthid)]
 print("This was the problem. Solved.")
 
 
+
+# SUMMARY STATISTICS ------------------------------------------------------
+#
+# nas = colSums(is.na(DT))
+# round(nas / nrow(DT) * 100, 2)
+# nas_sample = colSums(is.na(DT[1:3000]))
+# round(nas_sample / 3000 * 100, 2)
+
+
 # TASKS -------------------------------------------------------------------
 print("Tasks")
 
@@ -240,11 +249,9 @@ nested_cv_split_week = function(task,
   return(list(custom_inner = custom_inner, custom_outer = custom_outer))
 }
 
-# generate cv's
 custom_cvs = list()
-custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 48, 12, 1, 1, 1)
-custom_cvs[[2]] = nested_cv_split_week(task_ret_week, 96, 12, 1, 1, 1)
-custom_cvs[[3]] = nested_cv_split_week(task_ret_week, 144, 12, 1, 1, 1)
+custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 96, 13, 5, 1, 1)
+custom_cvs[[2]] = nested_cv_split_week(task_ret_week, 144, 13, 5, 1, 1)
 
 
 # ADD PIPELINES -----------------------------------------------------------
@@ -294,8 +301,8 @@ graph_template =
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
   po("fixfactors", id = "fixfactors") %>>%
-  # po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
-  po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  # po("winsorizesimplegroup", group_var = "weekid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
   # po("uniformization") %>>%
@@ -349,8 +356,10 @@ search_space_template = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  # winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -609,7 +618,7 @@ graph_template =
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
   po("fixfactors", id = "fixfactors") %>>%
   # po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
-  po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  po("winsorizesimplegroup", group_var = "weekid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
   # scale branch
@@ -907,6 +916,41 @@ designs_l = lapply(custom_cvs, function(cv_) {
                       at_kknn, at_gbm, at_rsm, at_bart, at_catboost, at_glmnet),
       resamplings = customo_
     )
+
+    # TEST --------------------------------------------------------------------
+    # bmr = benchmark(design[1], store_models = FALSE)
+    #
+    # design$learner[[1]]
+    # pops = function(x, pop, ...) {
+    #   pos = po(pop, ...)
+    #   x = pos$train(list(x))[[1]]
+    #   cat("Rows ", x$nrow, "\nColumns ", x$ncol, "\n")
+    #   return(x)
+    # }
+    # x = task_ret_week$clone()
+    # x$filter(customo_$instance$train[[1]])
+    # x$nrow
+    # x$ncol
+    # x = pops(x, "subsample", frac = 0.3)
+    # x = pops(x, "dropnacol", cutoff = 0.05)
+    # x = pops(x, "dropna")
+    # x = pops(x, "removeconstants")
+    # x = pops(x, "fixfactors")
+    # # x = pops(x, "winsorizesimple", probs_low = 0.2, probs_high = 0.8, na.rm = TRUE)
+    # x = pops(x, "winsorizesimplegroup", group_var = "yearmonthid", probs_low = 0.1, probs_high = 0.9, na.rm = TRUE)
+    # any(is.na(x$data()))
+    # x = pops(x, "removeconstants")
+    # x = pops(x, "dropcorr", cutoff = 0.8)
+    # any(is.na(x$data()))
+    # x$data()[, 1:10]
+    # x$data(1:10)[, 1:10]
+    # x = pops(x, "uniformization")
+    # x = pops(x, "dropna")
+    # x$data()[, 1:6]
+    # x = pops(x, "filter", filter = flt("jmi"), filter.frac = 0.05)
+    # x = pops(x, "filter", filter = flt("relief"), filter.frac = 0.05)
+    # x = pops(x, "filter", filter = flt("gausscov_f1st"), filter.frac = 0.05)
+    # TEST
   })
   designs_cv = do.call(rbind, designs_cv_l)
 })
