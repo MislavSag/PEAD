@@ -142,4 +142,9 @@ cat("CHANGE JOB ID MANNUALY", nrow(jc$jobs), "!!!")
 cat("Execute Job")
 gc(reset = TRUE)
 update$started = batchtools:::ustamp()
+
+print("Job values")
+print(job$pars)
+
+
 # result = execJob(job)
