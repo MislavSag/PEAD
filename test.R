@@ -118,7 +118,7 @@ jc = makeJobCollection(ids_not_done,
                        reg = reg)
 
 # extract integer
-i = 1L
+i = 1663L
 
 # start buffer
 buf = UpdateBuffer$new(jc$jobs$job.id)
