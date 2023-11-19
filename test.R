@@ -106,10 +106,10 @@ UpdateBuffer = R6Class(
 
 # RUN JOB -----------------------------------------------------------------
 # load registry
-reg = loadRegistry("experiments")
+reg = loadRegistry("experimentstest")
 
 # extract not  done ids
-ids_not_done = findNotDone(reg=reg)
+# ids_not_done = findNotDone(reg=reg)
 
 # create job collection
 resources = list(ncpus = 4) # this shouldnt be important
@@ -118,7 +118,7 @@ jc = makeJobCollection(ids_not_done,
                        reg = reg)
 
 # extract integer
-i = 1663L
+i = 1L
 
 # start buffer
 buf = UpdateBuffer$new(jc$jobs$job.id)
@@ -133,8 +133,10 @@ cat("Get Job \n")
 #   seed = 1 + jc$jobs[i]$job.id,
 #   resources = jc$resources
 # )
-job = batchtools:::getJob(jc, i)
+job = batchtools:::getJob.JobCollection(jc, i)
 id = job$id
+
+batchtools:::getSeed()
 
 print(job)
 cat("CHANGE JOB ID MANNUALY", nrow(jc$jobs), "!!!")

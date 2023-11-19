@@ -414,8 +414,8 @@ search_space_xgboost = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -495,8 +495,8 @@ search_space_kknn = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -557,8 +557,8 @@ search_space_glmnet = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -617,8 +617,8 @@ graph_template =
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
   po("fixfactors", id = "fixfactors") %>>%
-  # po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
-  po("winsorizesimplegroup", group_var = "weekid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  # po("winsorizesimplegroup", group_var = "weekid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
   # scale branch
@@ -661,8 +661,8 @@ search_space_template = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
