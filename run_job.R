@@ -121,15 +121,15 @@ ids_done = findDone(reg=reg)
 # if (nrow(ids_done) == 0) {
 #
 # }
-# resources = list(ncpus = 4) # this shouldnt be important
-# jc = makeJobCollection(ids = NULL,
-#                        resources = resources,
-#                        reg = reg)
-
 resources = list(ncpus = 4) # this shouldnt be important
-jc = makeJobCollection(ids = ids_not_done,
+jc = makeJobCollection(ids = NULL,
                        resources = resources,
                        reg = reg)
+
+# resources = list(ncpus = 4) # this shouldnt be important
+# jc = makeJobCollection(ids = ids_not_done,
+#                        resources = resources,
+#                        reg = reg)
 
 
 # start buffer

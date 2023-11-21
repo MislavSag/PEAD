@@ -138,7 +138,6 @@ unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c(
 unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task", "cv")]
 
 # accuracy by ids
-pr = PortfolioRet$new()
 measures = function(t, res) {
   list(acc   = mlr3measures::acc(t, res),
        fbeta = mlr3measures::fbeta(t, res, positive = "1"),
@@ -181,7 +180,6 @@ predictions_ensemble[, (cols_sign_response_neg) := lapply(sign_response_seq, fun
 # predictions_dt_ensemble[, lapply(.SD, function(x) sum(x == TRUE)), .SDcols = cols_]
 
 predictions_ensemble[median_response > 0 & sd_response < 0.15, .(tr = truth_sign, res = 1)][, sum(tr == res) / length(tr)]
-
 
 # check only sign ensamble performance
 res = lapply(cols_sign_response_pos[1:5], function(x) {
