@@ -953,6 +953,7 @@ designs_l = lapply(custom_cvs, function(cv_) {
     # TEST
   })
   designs_cv = do.call(rbind, designs_cv_l)
+  designs_cv
 })
 designs = do.call(rbind, designs_l)
 
