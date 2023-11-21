@@ -250,8 +250,9 @@ nested_cv_split_week = function(task,
 }
 
 custom_cvs = list()
-custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 96, 13, 5, 1, 1)
-custom_cvs[[2]] = nested_cv_split_week(task_ret_week, 144, 13, 5, 1, 1)
+# custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 96, 13, 1, 1, 1)
+# custom_cvs[[2]] = nested_cv_split_week(task_ret_week, 144, 13, 1, 1, 1)
+custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 200, 15, 1, 1, 1)
 
 
 # ADD PIPELINES -----------------------------------------------------------
@@ -293,7 +294,8 @@ mlr_measures$add("portfolio_ret", PortfolioRet)
 # graph template
 gr = gunion(list(
   po("nop", id = "nop_union_pca"),
-  po("pca", center = FALSE, rank. = 100)
+  po("pca", center = FALSE, rank. = 100),
+  po("ica", n.comp = 100)
 )) %>>% po("featureunion")
 graph_template =
   po("subsample") %>>% # uncomment this for hyperparameter tuning
@@ -527,12 +529,12 @@ search_space_kknn = ps(
 
 # nnet graph
 graph_nnet = graph_template %>>%
-  po("learner", learner = lrn("regr.nnet", MaxNWts = 40000))
+  po("learner", learner = lrn("regr.nnet", MaxNWts = 50000))
 graph_nnet = as_learner(graph_nnet)
 as.data.table(graph_nnet$param_set)[, .(id, class, lower, upper, levels)]
 search_space_nnet = search_space_template$clone()
 search_space_nnet$add(
-  ps(regr.nnet.size  = p_int(lower = 5, upper = 30),
+  ps(regr.nnet.size  = p_int(lower = 2, upper = 25),
      regr.nnet.decay = p_dbl(lower = 0.0001, upper = 0.1),
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
@@ -567,7 +569,7 @@ search_space_glmnet = ps(
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
   regr.glmnet.s     = p_int(lower = 5, upper = 30),
-  regr.glmnet.alpha = p_dbl(lower = 1e-4, upper = 1e4, logscale = TRUE)
+  regr.glmnet.alpha = p_dbl(lower = 1e-4, upper = 1, logscale = TRUE)
 )
 
 
@@ -982,7 +984,7 @@ sh_file = sprintf("
 
 #PBS -N PEAD
 #PBS -l ncpus=4
-#PBS -l mem=10GB
+#PBS -l mem=12GB
 #PBS -J 1-%d
 #PBS -o experiments/logs
 #PBS -j oe

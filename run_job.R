@@ -112,7 +112,7 @@ reg = loadRegistry("experiments")
 i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
 # i = 1663L
 
-# extract not  done ids
+# extract not done ids
 ids_not_done = findNotDone(reg=reg)
 ids_done = findDone(reg=reg)
 (nrow(ids_not_done) + nrow(ids_done)) == 8866
