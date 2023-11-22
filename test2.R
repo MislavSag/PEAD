@@ -106,7 +106,11 @@ UpdateBuffer = R6Class(
 
 # RUN JOB -----------------------------------------------------------------
 # load registry
-reg = loadRegistry("experimentstest")
+if (interactive()) {
+  reg = loadRegistry("experiments_test")
+} else {
+  reg = loadRegistry("experiments")
+}
 
 # extract not  done ids
 # ids_not_done = findNotDone(reg=reg)
