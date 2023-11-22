@@ -117,7 +117,7 @@ if (interactive()) {
 
 # create job collection
 resources = list(ncpus = 4) # this shouldnt be important
-jc = makeJobCollection(ids_not_done,
+jc = makeJobCollection(NULL,
                        resources = resources,
                        reg = reg)
 
