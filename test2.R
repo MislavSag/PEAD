@@ -1,3 +1,4 @@
+# 1-2516
 options(warn = -1)
 library(data.table)
 library(gausscov)
@@ -105,74 +106,15 @@ UpdateBuffer = R6Class(
 
 # RUN JOB -----------------------------------------------------------------
 # load registry
-if (interactive()) {
-  reg = loadRegistry("experiments_test")
-} else {
-  reg = loadRegistry("experiments")
-}
+reg = loadRegistry("experimentstest")
 
-# extract integer
-i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
-# i = 2L
-
-# extract not done ids
-ids_not_done = findNotDone(reg=reg)
-ids_done = findDone(reg=reg)
-(nrow(ids_not_done) + nrow(ids_done)) == 8866
+# extract not  done ids
+# ids_not_done = findNotDone(reg=reg)
 
 # create job collection
-# if (nrow(ids_done) == 0) {
-#
-# }
 resources = list(ncpus = 4) # this shouldnt be important
-jc = makeJobCollection(ids = NULL,
+jc = makeJobCollection(ids_not_done,
                        resources = resources,
                        reg = reg)
 
-# resources = list(ncpus = 4) # this shouldnt be important
-# jc = makeJobCollection(ids = ids_not_done,
-#                        resources = resources,
-#                        reg = reg)
-
-
-# start buffer
-buf = UpdateBuffer$new(jc$jobs$job.id)
-update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_character_, mem.used = NA_real_)
-
-# get job
-cat("Get Job \n")
-# job = batchtools:::Job$new(
-#   file.dir = jc$file.dir,
-#   reader = batchtools:::RDSReader$new(FALSE),
-#   id = jc$jobs[i]$job.id,
-#   job.pars = jc$jobs[i]$job.pars[[1L]],
-#   seed = 1 + jc$jobs[i]$job.id,
-#   resources = jc$resources
-# )
-job = batchtools:::getJob(jc, i)
-id = job$id
-
-# execute job
-cat("Execute Job")
-gc(reset = TRUE)
-update$started = batchtools:::ustamp()
-result = execJob(job)
-
-# save job
-writeRDS(result, file = getResultFiles(jc, id), compress = jc$compress)
-
-# memory usage
-tryCatch({
-  memory.mult = c(if (.Machine$sizeof.pointer == 4L) 28L else 56L, 8L)
-  gc_info <- gc(verbose = FALSE)
-  memory_used = sum(gc_info[, 1L] * memory.mult) / 1000000L
-}, error = function(e) {
-  memory_used <- 1000  # Set to NA or some default value in case of error
-})
-
-# updates
-update$done = batchtools:::ustamp()
-update$mem.used = memory_used
-buf$add(i, update)
-buf$flush(jc)
-buf$save(jc)
+print(jc)
