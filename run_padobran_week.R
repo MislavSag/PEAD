@@ -52,8 +52,11 @@ snakeToCamel <- function(snake_str) {
 print("Prepare data")
 
 # read predictors
-data_tbl <- fread("pead-predictors-20231031.csv")
-# data_tbl <- fread("D:/features/pead-predictors-20231031.csv")
+if (interactive()) {
+  data_tbl <- fread("D:/features/pead-predictors-20231031.csv")
+} else {
+  data_tbl <- fread("pead-predictors-20231031.csv")
+}
 
 # convert tibble to data.table
 DT = as.data.table(data_tbl)
@@ -757,7 +760,14 @@ designs_l = lapply(custom_cvs, function(cv_) {
   cv_outer = cv_$custom_outer
   cat("Number of iterations fo cv inner is ", cv_inner$iters, "\n")
 
-  designs_cv_l = lapply(1:cv_inner$iters, function(i) {
+  # debug
+  if (interactive()) {
+    to_ = 2
+  } else {
+    to_ = cv_inner$iters
+  }
+
+  designs_cv_l = lapply(1:to_, function(i) {
     # debug
     # i = 1
 
@@ -959,16 +969,19 @@ designs_l = lapply(custom_cvs, function(cv_) {
 })
 designs = do.call(rbind, designs_l)
 
+# exp dir
+if (interactive()) {
+  dirname_ = "experiments_test"
+} else {
+  dirname_ = "experiments"
+}
+
 # create registry
 print("Create registry")
 packages = c("data.table", "gausscov", "paradox", "mlr3", "mlr3pipelines",
              "mlr3tuning", "mlr3misc", "future", "future.apply",
              "mlr3extralearners", "stats")
-reg = makeExperimentRegistry(
-  file.dir = "./experiments",
-  seed = 1,
-  packages = packages
-)
+reg = makeExperimentRegistry(file.dir = dirname_, seed = 1, packages = packages)
 
 # populate registry with problems and algorithms to form the jobs
 print("Batchmark")
