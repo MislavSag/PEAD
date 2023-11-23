@@ -51,7 +51,11 @@ snakeToCamel <- function(snake_str) {
 print("Prepare data")
 
 # read predictors
-data_tbl <- fread("pead-predictors-20231031.csv")
+if (interactive()) {
+  data_tbl <- fread("D:/features/pead-predictors-20231031.csv")
+} else {
+  data_tbl <- fread("pead-predictors-20231031.csv")
+}
 
 # convert tibble to data.table
 DT = as.data.table(data_tbl)
@@ -258,95 +262,8 @@ nested_cv_split = function(task,
   return(list(custom_inner = custom_inner, custom_outer = custom_outer))
 }
 
-nested_cv_split_week = function(task,
-                                train_length = 50,
-                                tune_length = 10,
-                                test_length = 1,
-                                gap_tune = 1,
-                                gap_test = 1,
-                                id = task$id) {
-
-  # # debug
-  # train_length = 144
-  # tune_length = 12
-  # test_length = 1
-  # gap_tune = 1
-  # gap_test = 1
-
-  # get year month id data
-  # task = task_ret_week$clone()
-  task_ = task$clone()
-  weekid_ = task_$backend$data(cols = c("weekid", "..row_id"),
-                               rows = 1:task_$nrow)
-  stopifnot(all(task_$row_ids == weekid_$`..row_id`))
-  groups_v = weekid_[, unlist(unique(weekid))]
-
-  # create cusom CV's for inner and outer sampling
-  custom_inner = rsmp("custom", id = task$id)
-  custom_outer = rsmp("custom", id = task$id)
-
-  # util vars
-  start_folds = 1:(length(groups_v)-train_length-tune_length-test_length-gap_test-gap_tune)
-  get_row_ids = function(mid) unlist(weekid_[weekid %in% mid, 2], use.names = FALSE)
-
-  # create train data
-  train_groups <- lapply(start_folds,
-                         function(x) groups_v[x:(x+train_length-1)])
-  train_sets <- lapply(train_groups, get_row_ids)
-
-  # create tune set
-  tune_groups <- lapply(start_folds,
-                        function(x) groups_v[(x+train_length+gap_tune):(x+train_length+gap_tune+tune_length-1)])
-  tune_sets <- lapply(tune_groups, get_row_ids)
-
-  # test train and tune
-  test_1 = vapply(seq_along(train_groups), function(i) {
-    diff_in_weeks(
-      tail(as.Date(train_groups[[i]], origin = "1970-01-01"), 1),
-      head(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1)
-    )
-  }, FUN.VALUE = numeric(1L))
-  stopifnot(all(as.integer(test_1) %in% c(1-gap_tune+1, 1+gap_tune, 1+gap_tune+1)))
-  # test_2 = vapply(seq_along(train_groups), function(i) {
-  #   unlist(head(tune_sets[[i]], 1) - tail(train_sets[[i]], 1))
-  # }, FUN.VALUE = numeric(1L))
-  # stopifnot(all(test_2 > ))
-
-  # create test sets
-  insample_length = train_length + gap_tune + tune_length + gap_test
-  test_groups <- lapply(start_folds,
-                        function(x) groups_v[(x+insample_length):(x+insample_length+test_length-1)])
-  test_sets <- lapply(test_groups, get_row_ids)
-
-  # test tune and test
-  test_3 = vapply(seq_along(train_groups), function(i) {
-    mondf(
-      tail(as.Date(tune_groups[[i]], origin = "1970-01-01"), 1),
-      head(as.Date(test_groups[[i]], origin = "1970-01-01"), 1)
-    )
-  }, FUN.VALUE = numeric(1L))
-  stopifnot(all(as.integer(test_1) %in% c(1 + gap_test - 1, 1 + gap_test, 1 + gap_test + 1)))
-  # test_4 = vapply(seq_along(train_groups), function(i) {
-  #   unlist(head(test_sets[[i]], 1) - tail(tune_sets[[i]], 1))
-  # }, FUN.VALUE = numeric(1L))
-  # stopifnot(all(test_2 == 1))
-
-  # test
-  # as.Date(train_groups[[2]])
-  # as.Date(tune_groups[[2]])
-  # as.Date(test_groups[[2]])
-
-  # create inner and outer resamplings
-  custom_inner$instantiate(task, train_sets, tune_sets)
-  inner_sets = lapply(seq_along(train_groups), function(i) {
-    c(train_sets[[i]], tune_sets[[i]])
-  })
-  custom_outer$instantiate(task, inner_sets, test_sets)
-  return(list(custom_inner = custom_inner, custom_outer = custom_outer))
-}
-
 # generate cv's
-train_sets = seq(12, 12 * 3, 12)
+train_sets = seq(24, 12 * 3, 12)
 gap_sets = c(0:3)
 mat = cbind(train = train_sets)
 expanded_list  = lapply(gap_sets, function(v) {
@@ -354,20 +271,18 @@ expanded_list  = lapply(gap_sets, function(v) {
 })
 cv_param_grid = rbindlist(expanded_list)
 cv_param_grid[ ,tune := 3]
-cv_param_grid[1:3, `:=`(train = train * 4, tune = 3 * 4)]
 custom_cvs = list()
 for (i in 1:nrow(cv_param_grid)) {
   print(i)
   param_ = cv_param_grid[i]
-  if (param_$train > 47) {
-    custom_cvs[[i]] = nested_cv_split_week(
-      task = task_ret_week,
-      train_length = param_$train,
-      tune_length = param_$tune,
-      test_length = 1,
-      gap_tune = param_$gap + 1,
-      gap_test = param_$gap + 1
-    )
+  if (param_$gap == 0) {
+    custom_cvs[[i]] = nested_cv_split(task_ret_week,
+                                      param_$train,
+                                      param_$tune,
+                                      1,
+                                      1,
+                                      1)
+
   } else if (param_$gap == 1) {
     custom_cvs[[i]] = nested_cv_split(task_ret_month,
                                       param_$train,
@@ -482,6 +397,8 @@ length(custom_cvs) == nrow(cv_param_grid)
 # }
 
 # # visualize test
+# library(ggplot2)
+# library(patchwork)
 # prepare_cv_plot = function(x, set = "train") {
 #   x = lapply(x, function(x) data.table(ID = x))
 #   x = rbindlist(x, idcol = "fold")
@@ -490,6 +407,7 @@ length(custom_cvs) == nrow(cv_param_grid)
 #   x[, ID := as.numeric(ID)]
 # }
 # plot_cv = function(cv, n = 5) {
+#   print(cv)
 #   cv_test_inner = cv$custom_inner
 #   cv_test_outer = cv$custom_outer
 #
@@ -518,7 +436,7 @@ length(custom_cvs) == nrow(cv_param_grid)
 #     coord_flip() +
 #     labs(x = "", y = '', title = cv_test_inner$id)
 # }
-# plots = lapply(custom_cvs[c(1, 4, 7, 11)], plot_cv, n = 12)
+# plots = lapply(custom_cvs[c(1, 4, 7)], plot_cv, n = 12)
 # wp = wrap_plots(plots)
 # ggsave("plot_cv.png", plot = wp, width = 10, height = 8, dpi = 300)
 
@@ -558,11 +476,12 @@ mlr_measures$add("adjloss2", AdjLoss2)
 mlr_measures$add("portfolio_ret", PortfolioRet)
 
 
-# GRAPH V2 ----------------------------------------------------------------
+# LEARNERS ----------------------------------------------------------------
 # graph template
 gr = gunion(list(
   po("nop", id = "nop_union_pca"),
-  po("pca", center = FALSE, rank. = 100)
+  po("pca", center = FALSE, rank. = 100),
+  po("ica", n.comp = 100)
 )) %>>% po("featureunion")
 graph_template =
   po("subsample") %>>% # uncomment this for hyperparameter tuning
@@ -570,8 +489,8 @@ graph_template =
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
   po("fixfactors", id = "fixfactors") %>>%
-  # po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
-  po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  # po("winsorizesimplegroup", group_var = "weekid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
   # po("uniformization") %>>%
@@ -603,7 +522,7 @@ graph_template =
 graph_template$param_set
 search_space_template = ps(
   # subsample for hyperband
-  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
   # dropnacol.affect_columns = p_fct(
   #   levels = c("0.01", "0.05", "0.10"),
@@ -625,8 +544,10 @@ search_space_template = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  # winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -659,7 +580,7 @@ graph_xgboost = as_learner(graph_xgboost)
 as.data.table(graph_xgboost$param_set)[grep("depth", id), .(id, class, lower, upper, levels)]
 search_space_xgboost = ps(
   # subsample for hyperband
-  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
   # dropnacol.affect_columns = p_fct(
   #   levels = c("0.01", "0.05", "0.10"),
@@ -681,8 +602,8 @@ search_space_xgboost = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -748,7 +669,7 @@ graph_kknn = as_learner(graph_kknn)
 as.data.table(graph_kknn$param_set)[, .(id, class, lower, upper, levels)]
 search_space_kknn = ps(
   # subsample for hyperband
-  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -762,8 +683,8 @@ search_space_kknn = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -794,12 +715,12 @@ search_space_kknn = ps(
 
 # nnet graph
 graph_nnet = graph_template %>>%
-  po("learner", learner = lrn("regr.nnet", MaxNWts = 40000))
+  po("learner", learner = lrn("regr.nnet", MaxNWts = 50000))
 graph_nnet = as_learner(graph_nnet)
 as.data.table(graph_nnet$param_set)[, .(id, class, lower, upper, levels)]
 search_space_nnet = search_space_template$clone()
 search_space_nnet$add(
-  ps(regr.nnet.size  = p_int(lower = 5, upper = 30),
+  ps(regr.nnet.size  = p_int(lower = 2, upper = 25),
      regr.nnet.decay = p_dbl(lower = 0.0001, upper = 0.1),
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
@@ -812,6 +733,7 @@ as.data.table(graph_glmnet$param_set)[, .(id, class, lower, upper, levels)]
 search_space_glmnet = ps(
   # subsample for hyperband
   subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+
   dropcorr.cutoff = p_fct(
     levels = c("0.80", "0.90", "0.95", "0.99"),
     trafo = function(x, param_set) {
@@ -823,8 +745,8 @@ search_space_glmnet = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -833,7 +755,7 @@ search_space_glmnet = ps(
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
   regr.glmnet.s     = p_int(lower = 5, upper = 30),
-  regr.glmnet.alpha = p_dbl(lower = 1e-4, upper = 1e4, logscale = TRUE)
+  regr.glmnet.alpha = p_dbl(lower = 1e-4, upper = 1, logscale = TRUE)
 )
 
 
@@ -878,13 +800,13 @@ search_space_glmnet = ps(
 # lightgbm graph
 # [LightGBM] [Fatal] Do not support special JSON characters in feature name.
 graph_template =
-  # po("subsample") %>>% # uncomment this for hyperparameter tuning
+  po("subsample") %>>% # uncomment this for hyperparameter tuning
   po("dropnacol", id = "dropnacol", cutoff = 0.05) %>>%
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
   po("fixfactors", id = "fixfactors") %>>%
-  # po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
-  po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  # po("winsorizesimplegroup", group_var = "weekid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
   # scale branch
@@ -905,7 +827,7 @@ graph_template =
   po("unbranch", id = "filter_unbranch")
 search_space_template = ps(
   # subsample for hyperband
-  # subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.3, 1, tags = "budget"), # unccoment this if we want to use hyperband optimization
   # preprocessing
   # dropnacol.affect_columns = p_fct(
   #   levels = c("0.01", "0.05", "0.10"),
@@ -927,8 +849,8 @@ search_space_template = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -1008,6 +930,7 @@ set_threads(graph_earth, n = threads)
 set_threads(graph_gbm, n = threads)
 set_threads(graph_rsm, n = threads)
 set_threads(graph_catboost, n = threads)
+set_threads(graph_glmnet, n = threads)
 
 
 # DESIGNS -----------------------------------------------------------------
@@ -1020,7 +943,14 @@ designs_l = lapply(custom_cvs, function(cv_) {
   cv_outer = cv_$custom_outer
   cat("Number of iterations fo cv inner is ", cv_inner$iters, "\n")
 
-  designs_cv_l = lapply(1:cv_inner$iters, function(i) { # 1:cv_inner$iters
+  # debug
+  if (interactive()) {
+    to_ = 2
+  } else {
+    to_ = cv_inner$iters
+  }
+
+  designs_cv_l = lapply(1:to_, function(i) { # 1:cv_inner$iters
     # debug
     # i = 1
 
@@ -1187,16 +1117,20 @@ designs_l = lapply(custom_cvs, function(cv_) {
 })
 designs = do.call(rbind, designs_l)
 
+# exp dir
+if (interactive()) {
+  dirname_ = "experiments_test"
+  if (dir.exists(dirname_)) system(paste0("rm -r ", dirname_))
+} else {
+  dirname_ = "experiments"
+}
+
 # create registry
 print("Create registry")
 packages = c("data.table", "gausscov", "paradox", "mlr3", "mlr3pipelines",
              "mlr3tuning", "mlr3misc", "future", "future.apply",
              "mlr3extralearners", "stats")
-reg = makeExperimentRegistry(
-  file.dir = "./experiments2",
-  seed = 1,
-  packages = packages
-)
+reg = makeExperimentRegistry(file.dir = dirname_, seed = 1, packages = packages)
 
 # populate registry with problems and algorithms to form the jobs
 print("Batchmark")

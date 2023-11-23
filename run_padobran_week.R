@@ -255,7 +255,7 @@ nested_cv_split_week = function(task,
 custom_cvs = list()
 # custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 96, 13, 1, 1, 1)
 # custom_cvs[[2]] = nested_cv_split_week(task_ret_week, 144, 13, 1, 1, 1)
-custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 200, 15, 1, 1, 1)
+custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 200, 15, 5, 1, 1)
 
 
 # ADD PIPELINES -----------------------------------------------------------
@@ -972,6 +972,7 @@ designs = do.call(rbind, designs_l)
 # exp dir
 if (interactive()) {
   dirname_ = "experiments_test"
+  if (dir.exists(dirname_)) system(paste0("rm -r ", dirname_))
 } else {
   dirname_ = "experiments"
 }

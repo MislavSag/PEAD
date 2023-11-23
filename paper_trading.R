@@ -244,9 +244,9 @@ nested_cv_split_week = function(task,
 
 # generate cv's
 custom_cvs = list()
-custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 48, 12, 1, 1, 1)
-custom_cvs[[2]] = nested_cv_split_week(task_ret_week, 96, 12, 1, 1, 1)
-custom_cvs[[3]] = nested_cv_split_week(task_ret_week, 144, 12, 1, 1, 1)
+# custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 96, 13, 1, 1, 1)
+# custom_cvs[[2]] = nested_cv_split_week(task_ret_week, 144, 13, 1, 1, 1)
+custom_cvs[[1]] = nested_cv_split_week(task_ret_week, 200, 15, 1, 1, 1)
 
 
 # ADD PIPELINES -----------------------------------------------------------
@@ -288,7 +288,8 @@ mlr_measures$add("portfolio_ret", PortfolioRet)
 # graph template
 gr = gunion(list(
   po("nop", id = "nop_union_pca"),
-  po("pca", center = FALSE, rank. = 100)
+  po("pca", center = FALSE, rank. = 100),
+  po("ica", n.comp = 100)
 )) %>>% po("featureunion")
 graph_template =
   po("subsample") %>>% # uncomment this for hyperparameter tuning
@@ -296,8 +297,8 @@ graph_template =
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
   po("fixfactors", id = "fixfactors") %>>%
-  # po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
-  po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  # po("winsorizesimplegroup", group_var = "weekid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
   # po("uniformization") %>>%
@@ -351,8 +352,10 @@ search_space_template = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  # winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  # winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -407,8 +410,8 @@ search_space_xgboost = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -488,8 +491,8 @@ search_space_kknn = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -520,12 +523,12 @@ search_space_kknn = ps(
 
 # nnet graph
 graph_nnet = graph_template %>>%
-  po("learner", learner = lrn("regr.nnet", MaxNWts = 40000))
+  po("learner", learner = lrn("regr.nnet", MaxNWts = 50000))
 graph_nnet = as_learner(graph_nnet)
 as.data.table(graph_nnet$param_set)[, .(id, class, lower, upper, levels)]
 search_space_nnet = search_space_template$clone()
 search_space_nnet$add(
-  ps(regr.nnet.size  = p_int(lower = 5, upper = 30),
+  ps(regr.nnet.size  = p_int(lower = 2, upper = 25),
      regr.nnet.decay = p_dbl(lower = 0.0001, upper = 0.1),
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
@@ -550,8 +553,8 @@ search_space_glmnet = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -560,7 +563,7 @@ search_space_glmnet = ps(
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
   regr.glmnet.s     = p_int(lower = 5, upper = 30),
-  regr.glmnet.alpha = p_dbl(lower = 1e-4, upper = 1e4, logscale = TRUE)
+  regr.glmnet.alpha = p_dbl(lower = 1e-4, upper = 1, logscale = TRUE)
 )
 
 
@@ -610,8 +613,8 @@ graph_template =
   po("dropna", id = "dropna") %>>%
   po("removeconstants", id = "removeconstants_1", ratio = 0)  %>>%
   po("fixfactors", id = "fixfactors") %>>%
-  # po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
-  po("winsorizesimplegroup", group_var = "yearmonthid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  po("winsorizesimple", id = "winsorizesimple", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
+  # po("winsorizesimplegroup", group_var = "weekid", id = "winsorizesimplegroup", probs_low = 0.01, probs_high = 0.99, na.rm = TRUE) %>>%
   po("removeconstants", id = "removeconstants_2", ratio = 0)  %>>%
   po("dropcorr", id = "dropcorr", cutoff = 0.99) %>>%
   # scale branch
@@ -654,8 +657,8 @@ search_space_template = ps(
     }
   ),
   # dropcorr.cutoff = p_fct(levels = c(0.8, 0.9, 0.95, 0.99)),
-  winsorizesimplegroup.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimplegroup.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
+  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
@@ -722,20 +725,20 @@ search_space_bart$add(
 # burn = p_int(lower = 10, upper = 100),
 # iter = p_int(lower = 100, upper = 1000)
 
-# threads
-threads = 4
-set_threads(graph_rf, n = threads)
-set_threads(graph_xgboost, n = threads)
-# set_threads(graph_bart, n = threads)
-# set_threads(graph_ksvm, n = threads) # unstable
-set_threads(graph_nnet, n = threads)
-set_threads(graph_kknn, n = threads)
-set_threads(graph_lightgbm, n = threads)
-set_threads(graph_earth, n = threads)
-set_threads(graph_gbm, n = threads)
-set_threads(graph_rsm, n = threads)
-set_threads(graph_catboost, n = threads)
-set_threads(graph_glmnet, n = threads)
+# # threads
+# threads = 4
+# set_threads(graph_rf, n = threads)
+# set_threads(graph_xgboost, n = threads)
+# # set_threads(graph_bart, n = threads)
+# # set_threads(graph_ksvm, n = threads) # unstable
+# set_threads(graph_nnet, n = threads)
+# set_threads(graph_kknn, n = threads)
+# set_threads(graph_lightgbm, n = threads)
+# set_threads(graph_earth, n = threads)
+# set_threads(graph_gbm, n = threads)
+# set_threads(graph_rsm, n = threads)
+# set_threads(graph_catboost, n = threads)
+# set_threads(graph_glmnet, n = threads)
 
 
 # DESIGNS -----------------------------------------------------------------
@@ -910,6 +913,7 @@ lapply(custom_cvs, function(cv_) {
   )
 
   # benchmark
+  # plan("multisession", 2)
   bmr = benchmark(design, store_models = FALSE)
 
   # save locally and to list
