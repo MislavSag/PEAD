@@ -771,10 +771,13 @@ designs_l = lapply(custom_cvs, function(cv_) {
     # debug
     # i = 1
 
+    task_inner = task_ret_week$clone()
+    task_inner$filter(c(cv_inner$train_set(i), cv_inner$test_set(i)))
+
     # inner resampling
     custom_ = rsmp("custom")
     custom_$id = paste0("custom_", cv_inner$iters, "_", i)
-    custom_$instantiate(task_ret_week,
+    custom_$instantiate(task_inner,
                         list(cv_inner$train_set(i)),
                         list(cv_inner$test_set(i)))
 
