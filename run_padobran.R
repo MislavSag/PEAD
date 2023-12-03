@@ -978,7 +978,7 @@ designs_l = lapply(custom_cvs, function(cv_) {
 
     # objects for all autotuners
     measure_ = msr("portfolio_ret")
-    tuner_   = tnr("hyperband", eta = 4)
+    tuner_   = tnr("hyperband", eta = 5)
     # tuner_   = tnr("mbo")
     # term_evals = 20
 
