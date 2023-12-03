@@ -66,14 +66,14 @@ data_tbl <- fread("D:/features/pead-predictors-20231031.csv")
 # convert tibble to data.table
 DT = as.data.table(data_tbl)
 
-# create group variable
-DT[, date_rolling := as.IDate(date_rolling)]
-DT[, yearmonthid := round(date_rolling, digits = "month")]
-DT[, weekid := round(date_rolling, digits = "week")]
-DT[, .(date, date_rolling, yearmonthid, weekid)]
-DT[, yearmonthid := as.integer(yearmonthid)]
-DT[, weekid := as.integer(weekid)]
-DT[, .(date, date_rolling, yearmonthid, weekid)]
+  # create group variable
+  DT[, date_rolling := as.IDate(date_rolling)]
+  DT[, yearmonthid := round(date_rolling, digits = "month")]
+  DT[, weekid := round(date_rolling, digits = "week")]
+  DT[, .(date, date_rolling, yearmonthid, weekid)]
+  DT[, yearmonthid := as.integer(yearmonthid)]
+  DT[, weekid := as.integer(weekid)]
+  DT[, .(date, date_rolling, yearmonthid, weekid)]
 
 # remove industry and sector vars
 DT[, `:=`(industry = NULL, sector = NULL)]
@@ -760,10 +760,13 @@ lapply(custom_cvs, function(cv_) {
   # get last
   i = cv_inner$iters
 
+  task_inner = task_ret_week$clone()
+  task_inner$filter(c(cv_inner$train_set(i), cv_inner$test_set(i)))
+
   # inner resampling
   custom_ = rsmp("custom")
   custom_$id = paste0("custom_", cv_inner$iters, "_", i)
-  custom_$instantiate(task_ret_week,
+  custom_$instantiate(task_inner,
                       list(cv_inner$train_set(i)),
                       list(cv_inner$test_set(i)))
 
@@ -919,7 +922,7 @@ lapply(custom_cvs, function(cv_) {
   )
 
   # benchmark
-  # plan("multisession", 2)
+  # plan("multisession", workers = 4)
   bmr = benchmark(design, store_models = FALSE)
 
   # save locally and to list
@@ -927,3 +930,8 @@ lapply(custom_cvs, function(cv_) {
   file_name = paste0("paper-pead", cv_$custom_inner$iters, "-", time_, ".rds")
   saveRDS(bmr, file.path(mlr3_save_path, file_name))
 })
+
+# inspect results
+
+
+

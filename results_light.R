@@ -38,7 +38,7 @@ rbind(ids_notdone, ids_done[job.id %in% results_files])
 plan("multisession", workers = 4L)
 start_time = Sys.time()
 results = future_lapply(ids_done[, job.id], function(id_) {
-  # id_ = 2110
+  # id_ = 1
   print(id_)
   # bmr object
   bmrs = reduceResultsBatchmark(id_, store_backends = FALSE, reg = reg)
@@ -92,16 +92,17 @@ get_backend = function(task_name = "taskRetWeek") {
 }
 id_cols = c("symbol", "date", "yearmonthid", "..row_id", "epsDiff", "nincr", "nincr2y", "nincr3y")
 taskRetWeek    = get_backend()
-taskRetMonth   = get_backend("taskRetMonth")
-taskRetMonth2  = get_backend("taskRetMonth2")
-taskRetQuarter = get_backend("taskRetQuarter")
-test = all(c(identical(taskRetWeek, taskRetMonth),
-             identical(taskRetWeek, taskRetMonth2),
-             identical(taskRetWeek, taskRetQuarter)))
+# taskRetMonth   = get_backend("taskRetMonth")
+# taskRetMonth2  = get_backend("taskRetMonth2")
+# taskRetQuarter = get_backend("taskRetQuarter")
+# test = all(c(identical(taskRetWeek, taskRetMonth),
+#              identical(taskRetWeek, taskRetMonth2),
+#              identical(taskRetWeek, taskRetQuarter)))
 print(test)
 if (test) {
   backend = copy(taskRetWeek)
   setnames(backend, "..row_id", "row_ids")
+
   rm(list = c("taskRetWeek", "taskRetMonth", "taskRetMonth2", "taskRetQuarter"))
   rm(list = c("task_ret_week", "task_ret_month", "task_ret_month2", "task_ret_quarter"))
 }
@@ -124,6 +125,9 @@ setnames(predictions,
 
 
 # PREDICTIONS RESULTS -----------------------------------------------------
+# remove dupliactes - keep firt
+predictions = unique(predictions, by = c("row_ids", "date", "task", "learner", "cv"))
+
 # predictions
 predictions[, `:=`(
   truth_sign = as.factor(sign(truth)),
@@ -182,13 +186,13 @@ predictions_ensemble[, (cols_sign_response_neg) := lapply(sign_response_seq, fun
 predictions_ensemble[median_response > 0 & sd_response < 0.15, .(tr = truth_sign, res = 1)][, sum(tr == res) / length(tr)]
 
 # check only sign ensamble performance
-res = lapply(cols_sign_response_pos[1:5], function(x) {
-  print(x)
-  predictions_ensemble[get(x) == TRUE & sd_response < 0.3][
-    , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
-})
-names(res) = cols_sign_response_pos
-res
+# res = lapply(cols_sign_response_pos[1:5], function(x) {
+#   print(x)
+#   predictions_ensemble[get(x) == TRUE & sd_response < 0.3][
+#     , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
+# })
+# names(res) = cols_sign_response_pos
+# res
 
 # check only sign ensamble performance all
 res = lapply(cols_sign_response_pos, function(x) {
@@ -356,4 +360,11 @@ gausscov = rbindlist(gausscov, idcol = "task")
 # most important vars across all tasks
 gausscov[, sum(value), by = variable][order(V1)][, tail(.SD, 10)]
 gausscov[, sum(value), by = .(task, variable)][order(V1)][, tail(.SD, 5), by = task]
+
+
+# ISSUES ------------------------------------------------------------------
+# slow importing
+res_test = loadResult(1, reg = reg)
+
+
 

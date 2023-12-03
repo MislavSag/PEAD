@@ -263,7 +263,7 @@ nested_cv_split = function(task,
 }
 
 # generate cv's
-train_sets = seq(24, 12 * 3, 12)
+train_sets = seq(12, 12 * 4, 12)
 gap_sets = c(0:3)
 mat = cbind(train = train_sets)
 expanded_list  = lapply(gap_sets, function(v) {
@@ -720,7 +720,7 @@ graph_nnet = as_learner(graph_nnet)
 as.data.table(graph_nnet$param_set)[, .(id, class, lower, upper, levels)]
 search_space_nnet = search_space_template$clone()
 search_space_nnet$add(
-  ps(regr.nnet.size  = p_int(lower = 2, upper = 25),
+  ps(regr.nnet.size  = p_int(lower = 2, upper = 15),
      regr.nnet.decay = p_dbl(lower = 0.0001, upper = 0.1),
      regr.nnet.maxit = p_int(lower = 50, upper = 500))
 )
@@ -966,18 +966,21 @@ designs_l = lapply(custom_cvs, function(cv_) {
       task_ = task_ret_quarter$clone()
     }
 
+    task_inner = task_ret_week$clone()
+    task_inner$filter(c(cv_inner$train_set(i), cv_inner$test_set(i)))
+
     # inner resampling
     custom_ = rsmp("custom")
     custom_$id = paste0("custom_", cv_inner$iters, "_", i)
-    custom_$instantiate(task_ret_week,
+    custom_$instantiate(task_inner,
                         list(cv_inner$train_set(i)),
                         list(cv_inner$test_set(i)))
 
     # objects for all autotuners
     measure_ = msr("portfolio_ret")
-    # tuner_   = tnr("hyperband", eta = 4)
-    tuner_   = tnr("mbo")
-    term_evals = 20
+    tuner_   = tnr("hyperband", eta = 4)
+    # tuner_   = tnr("mbo")
+    # term_evals = 20
 
     # auto tuner rf
     at_rf = auto_tuner(
@@ -986,8 +989,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_rf,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner xgboost
@@ -997,8 +1000,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_xgboost,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner BART
@@ -1008,8 +1011,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_bart,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner nnet
@@ -1019,8 +1022,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_nnet,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner lightgbm
@@ -1030,8 +1033,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_lightgbm,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner earth
@@ -1041,8 +1044,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_earth,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner kknn
@@ -1052,8 +1055,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_kknn,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner gbm
@@ -1063,8 +1066,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_gbm,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner rsm
@@ -1074,8 +1077,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_rsm,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner rsm
@@ -1085,8 +1088,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_bart,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # auto tuner catboost
@@ -1096,8 +1099,19 @@ designs_l = lapply(custom_cvs, function(cv_) {
       resampling = custom_,
       measure = measure_,
       search_space = search_space_catboost,
-      # terminator = trm("none")
-      term_evals = term_evals
+      terminator = trm("none")
+      # term_evals = term_evals
+    )
+
+    # auto tuner glmnet
+    at_glmnet = auto_tuner(
+      tuner = tuner_,
+      learner = graph_glmnet,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_glmnet,
+      terminator = trm("none")
+      # term_evals = term_evals
     )
 
     # outer resampling
@@ -1107,9 +1121,9 @@ designs_l = lapply(custom_cvs, function(cv_) {
 
     # nested CV for one round
     design = benchmark_grid(
-      tasks = task_,
+      tasks = task_ret_week,
       learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth,
-                      at_kknn, at_gbm, at_rsm, at_bart, at_catboost),
+                      at_kknn, at_gbm, at_rsm, at_bart, at_catboost, at_glmnet),
       resamplings = customo_
     )
   })
@@ -1122,7 +1136,7 @@ if (interactive()) {
   dirname_ = "experiments_test"
   if (dir.exists(dirname_)) system(paste0("rm -r ", dirname_))
 } else {
-  dirname_ = "experiments"
+  dirname_ = "experimentsmonth"
 }
 
 # create registry
@@ -1137,4 +1151,23 @@ print("Batchmark")
 batchmark(designs, reg = reg)
 
 # save registry
+print("Save registry")
 saveRegistry(reg = reg)
+
+# create sh file
+sh_file = sprintf("
+#!/bin/bash
+
+#PBS -N PEAD
+#PBS -l ncpus=4
+#PBS -l mem=10GB
+#PBS -J 1-%d
+#PBS -o experiments/logs
+#PBS -j oe
+
+cd ${PBS_O_WORKDIR}
+apptainer run image.sif run_job.R
+", nrow(designs))
+sh_file_name = "run_month.sh"
+file.create(sh_file_name)
+writeLines(sh_file, sh_file_name)
