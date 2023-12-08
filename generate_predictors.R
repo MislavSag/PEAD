@@ -42,28 +42,17 @@ warnigns$filterwarnings('ignore')
 
 # SET UP ------------------------------------------------------------------
 # check if we have all necessary env variables
-# assert_choice("AWS-ACCESS-KEY", names(Sys.getenv()))
-# assert_choice("AWS-SECRET-KEY", names(Sys.getenv()))
-# assert_choice("AWS-REGION", names(Sys.getenv()))
 assert_choice("BLOB-ENDPOINT", names(Sys.getenv()))
 assert_choice("BLOB-KEY", names(Sys.getenv()))
 assert_choice("APIKEY-FMPCLOUD", names(Sys.getenv()))
 assert_choice("FRED-KEY", names(Sys.getenv()))
 
-# # set credentials
-# config <- tiledb_config()
-# config["vfs.s3.aws_access_key_id"] <- Sys.getenv("AWS-ACCESS-KEY")
-# config["vfs.s3.aws_secret_access_key"] <- Sys.getenv("AWS-SECRET-KEY")
-# config["vfs.s3.region"] <- Sys.getenv("AWS-REGION")
-# context_with_config <- tiledb_ctx(config)
-# fredr_set_key(Sys.getenv("FRED-KEY"))
-
 # global vars
-PATH = "F:/equity/usa"
+PATH = "F:/data/equity/us"
 
 # parameters
 strategy = "PEAD"  # PEAD (for predicting post announcement drift) or PRE (for predicting pre announcement)
-events_data <- "intersection" # data source, one of "fmp", "investingcom", "intersection"
+events_data = "intersection" # data source, one of "fmp", "investingcom", "intersection"
 
 
 # EARING ANNOUNCEMENT DATA ------------------------------------------------
@@ -160,7 +149,7 @@ events[date == max(date), symbol]
 # MARKET DATA AND FUNDAMENTALS ---------------------------------------------
 # import factors
 prices_dt = read_parquet(fs::path(PATH,
-                                  "predictors-daily",
+                                  "predictors_daily",
                                   "factors",
                                   "prices_factors",
                                   ext = "parquet"))
@@ -177,18 +166,18 @@ prices_dt <- prices_dt[symbol %in% prices_n$symbol]
 # SPY data
 con <- dbConnect(duckdb::duckdb())
 symbol = "SPY"
+path_ = "F:/data/equity/daily_fmp_all.csv"
 query <- sprintf("
   SELECT *
-  FROM 'F:/equity/daily_fmp_all.csv'
+  FROM '%s'
   WHERE Symbol = '%s'
-", symbol)
+", path_, symbol)
 data_ <- dbGetQuery(con, query)
 dbDisconnect(con)
 data_ = as.data.table(data_)
 data_ = data_[, .(date = date, close = adjClose)]
 data_[, returns := close / shift(close) - 1]
 spy = na.omit(data_)
-
 
 
 # REGRESSION LABELING ----------------------------------------------------------
@@ -555,7 +544,16 @@ if (length(at_) > 0) {
 # Wavelet arima
 print("Wavelet predictors")
 at_ = get_at_(RollingWaveletArimaFeatures)
-if (length(at_) > 0) {
+if (is.null(RollingWaveletArimaFeatures)) {
+  RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6L,
+                                                        lag = lag_, at = at_, filter = "haar")
+  RollingWaveletArimaFeaturesNew = RollingWaveletArimaInstance$get_rolling_features(OhlcvInstance)
+  gc()
+  RollingWaveletArimaFeaturesNew[, date := as.IDate(date)]
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingWaveletArimaFeaturesNew,
+         paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
+} else if (length(at_) > 0) {
   RollingWaveletArimaInstance = RollingWaveletArima$new(windows = 252, workers = 6L,
                                                         lag = lag_, at = at_, filter = "haar")
   RollingWaveletArimaFeaturesNew = RollingWaveletArimaInstance$get_rolling_features(OhlcvInstance)
