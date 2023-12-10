@@ -334,12 +334,13 @@ get_at_ = function(predictors) {
   # test if previous data exists
   if (is.null(predictors)) {
     print("No data. ")
-    return(1:nrow(dataset))
+    new_dataset = dataset[, .(symbol, date = as.IDate(date))]
+  } else {
+    # get only new data
+    new_dataset = fsetdiff(dataset[, .(symbol, date = as.IDate(date))],
+                           predictors[, .(symbol, date)])
   }
 
-  # get only new data
-  new_dataset = fsetdiff(dataset[, .(symbol, date = as.IDate(date))],
-                         predictors[, .(symbol, date)])
   # new_dataset = new_dataset[date > as.Date("2021-01-01")]
   new_data <- merge(OhlcvInstance$X,
                     dataset[new_dataset[, .(symbol, date)]],
@@ -569,7 +570,17 @@ if (is.null(RollingWaveletArimaFeatures)) {
 # Fracdiff
 print("Fradiff predictors")
 at_ = get_at_(RollingFracdiffFeatures)
-if (length(at_) > 0) {
+if (is.null(RollingWaveletArimaFeatures)) {
+  RollingFracdiffInstance = RollingFracdiff$new(windows = 252, workers = 6L,
+                                                lag = lag_, at = at_,
+                                                nar = c(1, 2), nma = c(1, 2),
+                                                bandw_exp = c(0.1, 0.5, 0.9))
+  RollingFracdiffFeaturesNew = RollingFracdiffInstance$get_rolling_features(OhlcvInstance)
+  gc()
+  RollingFracdiffFeaturesNew[, date := as.IDate(date)]
+  time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
+  fwrite(RollingFracdiffFeaturesNew, paste0("D:/features/PEAD-RollingFracdiffFeatures-", time_, ".csv"))
+} else if (length(at_) > 0) {
   RollingFracdiffInstance = RollingFracdiff$new(windows = 252, workers = 6L,
                                                 lag = lag_, at = at_,
                                                 nar = c(1, 2), nma = c(1, 2),
@@ -581,7 +592,7 @@ if (length(at_) > 0) {
   RollingFracdiffFeaturesNew[, date := as.IDate(date)]
   RollingFracdiffFeaturesNewMerged = rbind(RollingFracdiffFeatures, RollingFracdiffFeaturesNew)
   time_ <- format.POSIXct(Sys.time(), format = "%Y%m%d%H%M%S")
-  fwrite(RollingFracdiffFeaturesNewMerged, paste0("D:/features/PEAD-RollingWaveletArimaFeatures-", time_, ".csv"))
+  fwrite(RollingFracdiffFeaturesNewMerged, paste0("D:/features/PEAD-RollingFracdiffFeatures-", time_, ".csv"))
 }
 
 # prepare arguments for features
@@ -633,7 +644,7 @@ RollingTheftCatch22Features = fread(get_latest("RollingTheftCatch22Features"))
 RollingTheftTsfelFeatures = fread(get_latest("RollingTheftTsfelFeatures"))
 RollingTsfeaturesFeatures = fread(get_latest("RollingTsfeaturesFeatures"))
 # RollingQuarksFeatures = fread(get_latest("RollingQuarksFeatures"))
-# RollingWaveletArimaFeatures = fread(get_latest("RollingWaveletArimaFeatures")) # TODO: add i next itertion
+RollingWaveletArimaFeatures = fread(get_latest("RollingWaveletArimaFeatures")) # TODO: add i next itertion
 # RollingFracdiffFeatures = fread(get_latest("RollingFracdiffFeatures")) # TODO: add i next itertion
 
 # merge all features test
@@ -648,9 +659,9 @@ rolling_predictors <- Reduce(
     RollingGpdFeatures,
     RollingTheftCatch22Features,
     RollingTheftTsfelFeatures,
-    RollingTsfeaturesFeatures
+    RollingTsfeaturesFeatures,
     # RollingQuarksFeatures,
-    # RollingWaveletArimaFeatures # TODO Add this in next iteration
+    RollingWaveletArimaFeatures
     # RollingFracdiffFeatures     # TODO Add this in next iteration
   )
 )
