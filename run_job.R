@@ -19,6 +19,21 @@ library(brew)
 
 
 
+# COMMAND LINE ARGUMENTS --------------------------------------------------
+# Import command line arguments
+args = commandArgs(trailingOnly = TRUE)
+
+# Ensure there are enough arguments
+if(length(args) < 1) {
+  stop("Not enough arguments. Please provide id_1 and id_2.")
+}
+
+# Assign the arguments to variables
+cat(args, sep = "\n")
+residue = as.logical(as.integer(args[1]))
+cat("Argument 1 is ", residue)
+
+
 # UTILS -------------------------------------------------------------------
 # utils functions
 dir = function(reg, what) {
@@ -113,27 +128,24 @@ if (interactive()) {
 
 # extract integer
 i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
+cat("ID is ", i, "\n")
 # i = 3L
 
 # extract not done ids
 ids_not_done = findNotDone(reg=reg)
 ids_done = findDone(reg=reg)
-(nrow(ids_not_done) + nrow(ids_done)) == 8866
 
 # create job collection
-# if (nrow(ids_done) == 0) {
-#
-# }
 resources = list(ncpus = 4) # this shouldnt be important
-jc = makeJobCollection(ids = NULL,
-                       resources = resources,
-                       reg = reg)
-
-# resources = list(ncpus = 4) # this shouldnt be important
-# jc = makeJobCollection(ids = ids_not_done,
-#                        resources = resources,
-#                        reg = reg)
-
+if (residue) {
+  jc = makeJobCollection(ids = ids_not_done,
+                         resources = resources,
+                         reg = reg)
+} else {
+  jc = makeJobCollection(ids = NULL,
+                         resources = resources,
+                         reg = reg)
+}
 
 # start buffer
 buf = UpdateBuffer$new(jc$jobs$job.id)
@@ -141,14 +153,6 @@ update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_ch
 
 # get job
 cat("Get Job \n")
-# job = batchtools:::Job$new(
-#   file.dir = jc$file.dir,
-#   reader = batchtools:::RDSReader$new(FALSE),
-#   id = jc$jobs[i]$job.id,
-#   job.pars = jc$jobs[i]$job.pars[[1L]],
-#   seed = 1 + jc$jobs[i]$job.id,
-#   resources = jc$resources
-# )
 job = batchtools:::getJob(jc, i)
 id = job$id
 

@@ -8,6 +8,7 @@
 #PBS -j oe
 
 cd ${PBS_O_WORKDIR}
-apptainer run image.sif run_job.R
+apptainer run image.sif run_job.R 1
 
 # 1-16456
+# 16456 - 16174

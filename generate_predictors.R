@@ -602,10 +602,10 @@ at_ <- which(!is.na(prices_events$eps))
 
 # Features from OHLLCV
 print("Calculate Ohlcv features.")
-OhlcvFeaturesInit = OhlcvFeatures$new(at = NULL,
-                                      windows = c(5, 10, 22, 22 * 3, 22 * 6, 22 * 12, 22 * 12 * 2),
-                                      quantile_divergence_window =  c(22, 22*3, 22*6, 22*12, 22*12*2))
-OhlcvFeaturesSet = OhlcvFeaturesInit$get_ohlcv_features(OhlcvInstance)
+OhlcvFeaturesInit = OhlcvFeaturesDaily$new(at = NULL,
+                                           windows = c(5, 10, 22, 22 * 3, 22 * 6, 22 * 12, 22 * 12 * 2),
+                                           quantile_divergence_window =  c(22, 22*3, 22*6, 22*12, 22*12*2))
+OhlcvFeaturesSet = OhlcvFeaturesInit$get_ohlcv_features(OhlcvInstance$X)
 OhlcvFeaturesSetSample <- OhlcvFeaturesSet[at_ - lag_]
 setorderv(OhlcvFeaturesSetSample, c("symbol", "date"))
 # DEBUG
