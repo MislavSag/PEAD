@@ -14,7 +14,7 @@ endpoint = "https://snpmarketdata.blob.core.windows.net/"
 BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
 
 # globals
-PATH = "F:/H4week"
+PATH = "F:/H4"
 
 # load registry
 reg = loadRegistry(PATH, work.dir=PATH)
@@ -38,7 +38,7 @@ rbind(ids_notdone, ids_done[job.id %in% results_files])
 plan("multisession", workers = 4L)
 start_time = Sys.time()
 results = future_lapply(ids_done[, job.id], function(id_) {
-  # id_ = 1
+  # id_ = 1271
   print(id_)
   # bmr object
   bmrs = reduceResultsBatchmark(id_, store_backends = FALSE, reg = reg)

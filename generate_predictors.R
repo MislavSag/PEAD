@@ -720,7 +720,7 @@ features[, `:=`(
 
 # import fundamnetal fators
 fundamentals = read_parquet(fs::path(PATH,
-                                     "predictors-daily",
+                                     "predictors_daily",
                                      "factors",
                                      "fundamental_factors",
                                      ext = "parquet"))
@@ -785,9 +785,9 @@ features[, (char_cols) := lapply(.SD, as.numeric), .SDcols = char_cols]
 
 # import macro factors
 macros = read_parquet(fs::path(PATH,
-                               "predictors-daily",
+                               "predictors_daily",
                                "factors",
-                               "macro_factors",
+                               "acro_factors",
                                ext = "parquet"))
 
 # macro data
@@ -836,7 +836,6 @@ features <- features[, .SD, .SDcols = cols]
 # checks
 features[, max(date)]
 features[, .(symbol, date, date_rolling)]
-
 
 
 # CLEAN DATA --------------------------------------------------------------

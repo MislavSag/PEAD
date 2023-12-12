@@ -5,7 +5,7 @@ library(AzureStor)
 
 
 # setup
-PATH = "C:/Users/Mislav/SynologyDrive/H4/new"
+PATH = "C:/Users/Mislav/SynologyDrive/H4"
 mlr3_save_path = list.files(PATH, pattern = "H4-", full.names = TRUE)
 
 # utils
