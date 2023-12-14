@@ -54,7 +54,7 @@ print("Prepare data")
 if (interactive()) {
   data_tbl <- fread("D:/features/pead-predictors-20231031.csv")
 } else {
-  data_tbl <- fread("pead-predictors-20231031.csv")
+  data_tbl <- fread("pead-predictors-20231106.csv")
 }
 
 # convert tibble to data.table
