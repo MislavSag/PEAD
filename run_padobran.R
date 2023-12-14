@@ -1193,7 +1193,7 @@ sh_file = sprintf("
 #PBS -l ncpus=4
 #PBS -l mem=10GB
 #PBS -J 1-%d
-#PBS -o experiments/logs
+#PBS -o experimentsmonth/logs
 #PBS -j oe
 
 cd ${PBS_O_WORKDIR}
