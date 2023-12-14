@@ -2,7 +2,7 @@
 #PBS -N PEAD
 #PBS -l ncpus=4
 #PBS -l mem=10GB
-#PBS -J 1-11000
+#PBS -J 1-10000
 #PBS -o experimentsmonth/logs
 #PBS -j oe
 
