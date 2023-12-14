@@ -504,9 +504,10 @@ graph_template =
   # add pca columns
   gr %>>%
   # filters
-  po("branch", options = c("jmi", "relief", "gausscov"), id = "filter_branch") %>>%
-  gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
-              po("filter", filter = flt("relief"), filter.frac = 0.05),
+  po("branch", options = c("jmi", "relief", "gausscovf3", "gausscovf1"), id = "filter_branch") %>>%
+  gunion(list(po("filter", filter = flt("jmi"), filter.nfeat = 25),
+              po("filter", filter = flt("relief"), filter.nfeat = 25),
+              po("filter", filter = flt("gausscov_f3st"), m = 1, filter.cutoff = 0),
               po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0)
   )) %>>%
   po("unbranch", id = "filter_unbranch") %>>%
@@ -551,7 +552,7 @@ search_space_template = ps(
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscovf3", "gausscovf1")),
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix"))
 )
@@ -564,9 +565,10 @@ graph_rf = as_learner(graph_rf)
 as.data.table(graph_rf$param_set)[, .(id, class, lower, upper, levels)]
 search_space_rf = search_space_template$clone()
 search_space_rf$add(
-  ps(regr.ranger.max.depth  = p_int(1, 20),
+  ps(regr.ranger.max.depth  = p_int(1, 15),
      regr.ranger.replace    = p_lgl(),
      regr.ranger.mtry.ratio = p_dbl(0.1, 1),
+     regr.ranger.num.trees  = p_int(10, 2000),
      regr.ranger.splitrule  = p_fct(levels = c("variance", "extratrees")))
 )
 # regr.ranger.min.node.size   = p_int(1, 20), # Adjust the range as needed
@@ -645,6 +647,20 @@ search_space_catboost$add(
      regr.catboost.depth           = p_int(lower = 4, upper = 10),
      regr.catboost.l2_leaf_reg     = p_int(lower = 1, upper = 5),
      regr.catboost.random_strength = p_int(lower = 0, upper = 3))
+)
+
+# cforest graph
+graph_cforest = graph_template %>>%
+  po("learner", learner = lrn("regr.cforest"))
+graph_cforest = as_learner(graph_cforest)
+as.data.table(graph_cforest$param_set)[, .(id, class, lower, upper, levels)]
+search_space_cforest = search_space_template$clone()
+# https://cran.r-project.org/web/packages/partykit/partykit.pdf
+search_space_cforest$add(
+  ps(regr.cforest.mtryratio    = p_dbl(0.05, 1),
+     regr.cforest.ntree        = p_int(lower = 10, upper = 2000),
+     regr.cforest.mincriterion = p_dbl(0.1, 1),
+     regr.cforest.replace      = p_lgl())
 )
 
 # # gamboost graph
@@ -819,9 +835,10 @@ graph_template =
   # add pca columns
   gr %>>%
   # filters
-  po("branch", options = c("jmi", "relief", "gausscov"), id = "filter_branch") %>>%
-  gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.05),
-              po("filter", filter = flt("relief"), filter.frac = 0.05),
+  po("branch", options = c("jmi", "relief", "gausscovf3", "gausscovf1"), id = "filter_branch") %>>%
+  gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.02),
+              po("filter", filter = flt("relief"), filter.frac = 0.02),
+              po("filter", filter = flt("gausscov_f3st"), m = 1, filter.cutoff = 0),
               po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0)
   )) %>>%
   po("unbranch", id = "filter_unbranch")
@@ -854,7 +871,7 @@ search_space_template = ps(
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov"))
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscovf3", "gausscovf1"))
 )
 graph_lightgbm = graph_template %>>%
   po("learner", learner = lrn("regr.lightgbm"))
@@ -931,6 +948,7 @@ set_threads(graph_gbm, n = threads)
 set_threads(graph_rsm, n = threads)
 set_threads(graph_catboost, n = threads)
 set_threads(graph_glmnet, n = threads)
+set_threads(graph_cforest, n = threads)
 
 
 # DESIGNS -----------------------------------------------------------------
@@ -966,7 +984,8 @@ designs_l = lapply(custom_cvs, function(cv_) {
       task_ = task_ret_quarter$clone()
     }
 
-    task_inner = task_ret_week$clone()
+    # with new mlr3 version I have to clone
+    task_inner = task_$clone()
     task_inner$filter(c(cv_inner$train_set(i), cv_inner$test_set(i)))
 
     # inner resampling
@@ -1114,6 +1133,17 @@ designs_l = lapply(custom_cvs, function(cv_) {
       # term_evals = term_evals
     )
 
+    # auto tuner glmnet
+    at_cforest = auto_tuner(
+      tuner = tuner_,
+      learner = graph_cforest,
+      resampling = custom_,
+      measure = measure_,
+      search_space = search_space_cforest,
+      terminator = trm("none")
+      # term_evals = term_evals
+    )
+
     # outer resampling
     customo_ = rsmp("custom")
     customo_$id = paste0("custom_", cv_inner$iters, "_", i)
@@ -1121,9 +1151,10 @@ designs_l = lapply(custom_cvs, function(cv_) {
 
     # nested CV for one round
     design = benchmark_grid(
-      tasks = task_ret_week,
+      tasks = task_,
       learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth,
-                      at_kknn, at_gbm, at_rsm, at_bart, at_catboost, at_glmnet),
+                      at_kknn, at_gbm, at_rsm, at_bart, at_catboost,
+                      at_glmnet, at_cforest),
       resamplings = customo_
     )
   })

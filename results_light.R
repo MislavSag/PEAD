@@ -35,13 +35,106 @@ rbind(ids_notdone, ids_done[job.id %in% results_files])
 # predictions = readRDS("predictions/predictions-20231025215620.rds")
 
 # get results
+tabs = batchtools::getJobTable(ids_done, reg = reg)[
+  , c("job.id", "job.name", "repl", "prob.pars", "algo.pars"), with = FALSE]
+predictions_meta = cbind.data.frame(
+  id = tabs[, job.id],
+  task = vapply(tabs$prob.pars, `[[`, character(1L), "task_id"),
+  learner = gsub(".*regr.|.tuned", "", vapply(tabs$algo.pars, `[[`, character(1L), "learner_id")),
+  cv = gsub("custom_|_.*", "", vapply(tabs$prob.pars, `[[`, character(1L), "resampling_id")),
+  fold = gsub("custom_\\d+_", "", vapply(tabs$prob.pars, `[[`, character(1L), "resampling_id"))
+)
+predictions_l = lapply(unlist(ids_done), function(id_) {
+  # id_ = 10035
+  x = tryCatch({readRDS(fs::path(PATH, "results", id_, ext = "rds"))},
+               error = function(e) NULL)
+  if (is.null(x)) {
+    print(id_)
+    return(NULL)
+  }
+  x["id"] = id_
+  x
+})
+predictions = lapply(predictions_l, function(x) {
+  cbind.data.frame(
+    id = x$id,
+    ids = x$prediction$test$row_ids,
+    truth = x$prediction$test$truth,
+    test = x$prediction$test$response
+  )
+})
+predictions = rbindlist(predictions)
+predictions = merge(predictions_meta, predictions, by = "id")
+
+# save predictions
+time_ = strftime(Sys.time(), format = "%Y%m%d%H%M%S")
+file_name = paste0("predictions/predictions-", time_, ".rds")
+if (!fs::dir_exists("predictions")) fs::dir_create("predictions")
+saveRDS(predictions, file_name)
+
+# import tasks
+tasks_files = dir_ls(fs::path(PATH, "problems"))
+tasks = lapply(tasks_files, readRDS)
+names(tasks) = lapply(tasks, function(t) t$data$id)
+tasks
+
+# backends
+get_backend = function(task_name = "taskRetWeek") {
+  task_ = tasks[names(tasks) == task_name][[1]]
+  task_ = task_$data$backend
+  task_ = task_$data(rows = task_$rownames, cols = id_cols)
+  return(task_)
+}
+id_cols = c("symbol", "date", "yearmonthid", "..row_id", "epsDiff", "nincr", "nincr2y", "nincr3y")
+taskRetWeek    = get_backend()
+taskRetMonth   = get_backend("taskRetMonth")
+taskRetMonth2  = get_backend("taskRetMonth2")
+taskRetQuarter = get_backend("taskRetQuarter")
+# test = all(c(identical(taskRetWeek, taskRetMonth),
+#              identical(taskRetWeek, taskRetMonth2),
+#              identical(taskRetWeek, taskRetQuarter)))
+print(test)
+if (test) {
+  backend = copy(taskRetWeek)
+  setnames(backend, "..row_id", "row_ids")
+
+  rm(list = c("taskRetWeek", "taskRetMonth", "taskRetMonth2", "taskRetQuarter"))
+  rm(list = c("task_ret_week", "task_ret_month", "task_ret_month2", "task_ret_quarter"))
+}
+
+# measures
+source("Linex.R")
+source("AdjLoss2.R")
+source("PortfolioRet.R")
+mlr_measures$add("linex", Linex)
+mlr_measures$add("adjloss2", AdjLoss2)
+mlr_measures$add("portfolio_ret", PortfolioRet)
+
+# merge backs and predictions
+predictions = backend[predictions, on = c("row_ids")]
+predictions[, date := as.Date(date)]
+setnames(predictions,
+         c("task_names", "learner_names", "cv_names"),
+         c("task", "learner", "cv"),
+         skip_absent = TRUE)
+
+
+
+
+
+
+
+
+
+# get results
 plan("multisession", workers = 4L)
 start_time = Sys.time()
 results = future_lapply(ids_done[, job.id], function(id_) {
   # id_ = 1271
   print(id_)
   # bmr object
-  bmrs = reduceResultsBatchmark(id_, store_backends = FALSE, reg = reg)
+  system.time({bmrs = reduceResultsBatchmark(2:100, store_backends = FALSE, reg = reg)})
+  bmrs = reduceResultsBatchmark(2:10, store_backends = FALSE, reg = reg)
   bmrs_dt = as.data.table(bmrs)
 
   # get predictions
@@ -59,7 +152,7 @@ results = future_lapply(ids_done[, job.id], function(id_) {
   #         learner = learner_names[[j]],
   #         cv = cv_names[[j]],
   #         fold = fold_names[[j]],
-  #         predictions[[j]]))j
+  #         predictions[[j]]))
 
   return(predictions)
 })

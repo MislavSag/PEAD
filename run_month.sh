@@ -11,4 +11,4 @@ cd ${PBS_O_WORKDIR}
 apptainer run image.sif run_job.R 1
 
 # 1-16456
-# 16456 - 16400
+# 16456 - 16402
