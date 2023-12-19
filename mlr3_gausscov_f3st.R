@@ -61,8 +61,13 @@ FilterGausscovF3st = R6::R6Class(
         y = as.matrix(task$truth())
       }
       res = mlr3misc::invoke(gausscov::f3st, y = y, x = x, .args = pv)
-
-      res_index <- unique(as.integer(res[[1]][1, ]))[-1]
+      res_index <- tryCatch({unique(as.integer(res[[1]][1, ]))[-1]}, error = function(e) NULL)
+      while (is.null(res_index)) {
+        pv$p0 = pv$p0 + 0.01
+        print(pv)
+        res = mlr3misc::invoke(gausscov::f3st, y = y, x = x, .args = pv)
+        res_index <- tryCatch({unique(as.integer(res[[1]][1, ]))[-1]}, error = function(e) NULL)
+      }
       res_index  <- res_index [res_index  != 0]
 
       scores[res_index] = 1

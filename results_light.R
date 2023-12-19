@@ -23,10 +23,11 @@ reg = loadRegistry(PATH, work.dir=PATH)
 reg$status[!is.na(mem.used)]
 reg$status[, max(mem.used, na.rm = TRUE)]
 
-# done jobs
+# done jo bs
 results_files = fs::path_ext_remove(fs::path_file(dir_ls(fs::path(PATH, "results"))))
 ids_done = findDone(reg=reg)
 ids_done = ids_done[job.id %in% results_files]
+# ids_done = ids_done[job.id %in% 200:250]
 ids_notdone = findNotDone(reg=reg)
 rbind(ids_notdone, ids_done[job.id %in% results_files])
 
@@ -60,7 +61,7 @@ predictions = lapply(predictions_l, function(x) {
     id = x$id,
     row_ids = x$prediction$test$row_ids,
     truth = x$prediction$test$truth,
-    test = x$prediction$test$response
+    response = x$prediction$test$response
   )
 })
 predictions = rbindlist(predictions)

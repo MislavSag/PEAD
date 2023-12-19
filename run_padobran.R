@@ -263,11 +263,11 @@ nested_cv_split = function(task,
 }
 
 # generate cv's
-train_sets = seq(12, 12 * 4, 12)
+train_sets = c(24, 48)
 gap_sets = c(0:3)
-mat = cbind(train = train_sets)
+# mat = cbind(train = train_sets)
 expanded_list  = lapply(gap_sets, function(v) {
-  cbind.data.frame(mat, gap = v)
+  cbind.data.frame(train_sets, gap = v)
 })
 cv_param_grid = rbindlist(expanded_list)
 cv_param_grid[ ,tune := 3]
@@ -341,6 +341,7 @@ length(custom_cvs) == nrow(cv_param_grid)
 #   train_groups = lapply(train_length_start:length(groups_v), function(i) groups_v[1:i])
 #
 #   # create tune set
+### REMOVE gap_tune AT THE RIGHT ????
 #   tune_groups <- lapply((train_length_start+gap_tune+1):length(groups_v), function(i) groups_v[i:(i+tune_length+gap_tune-1)])
 #   index_keep = vapply(tune_groups, function(x) !any(is.na(x)), FUN.VALUE = logical(1L))
 #   tune_groups = tune_groups[index_keep]
@@ -480,8 +481,8 @@ mlr_measures$add("portfolio_ret", PortfolioRet)
 # graph template
 gr = gunion(list(
   po("nop", id = "nop_union_pca"),
-  po("pca", center = FALSE, rank. = 100),
-  po("ica", n.comp = 100)
+  po("pca", center = FALSE, rank. = 50),
+  po("ica", n.comp = 10)
 )) %>>% po("featureunion")
 graph_template =
   po("subsample") %>>% # uncomment this for hyperparameter tuning
@@ -609,7 +610,7 @@ search_space_xgboost = ps(
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscovf3", "gausscovf1")),
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
@@ -630,8 +631,8 @@ search_space_gbm = search_space_template$clone()
 search_space_gbm$add(
   ps(regr.gbm.distribution      = p_fct(levels = c("gaussian", "tdist")),
      regr.gbm.shrinkage         = p_dbl(lower = 0.001, upper = 0.1),
-     regr.gbm.n.trees           = p_int(lower = 50, upper = 200),
-     regr.gbm.interaction.depth = p_int(lower = 1, upper = 4))
+     regr.gbm.n.trees           = p_int(lower = 50, upper = 150),
+     regr.gbm.interaction.depth = p_int(lower = 1, upper = 3))
   # ....
 )
 
@@ -704,7 +705,7 @@ search_space_kknn = ps(
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscovf3", "gausscovf1")),
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
@@ -766,7 +767,7 @@ search_space_glmnet = ps(
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscov")),
+  filter_branch.selection = p_fct(levels = c("jmi", "relief", "gausscovf3", "gausscovf1")),
   # interaction
   interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix")),
   # learner
@@ -1197,7 +1198,7 @@ sh_file = sprintf("
 #PBS -j oe
 
 cd ${PBS_O_WORKDIR}
-apptainer run image.sif run_job.R
+apptainer run image.sif run_job.R 0
 ", nrow(designs))
 sh_file_name = "run_month.sh"
 file.create(sh_file_name)
