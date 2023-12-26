@@ -508,7 +508,7 @@ graph_template =
   po("branch", options = c("jmi", "relief", "gausscovf3", "gausscovf1"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.nfeat = 25),
               po("filter", filter = flt("relief"), filter.nfeat = 25),
-              po("filter", filter = flt("gausscov_f3st"), m = 1, filter.cutoff = 0),
+              po("filter", filter = flt("gausscov_f3st"), p0 = 0.01, m = 1, filter.cutoff = 0),
               po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0)
   )) %>>%
   po("unbranch", id = "filter_unbranch") %>>%
@@ -839,7 +839,7 @@ graph_template =
   po("branch", options = c("jmi", "relief", "gausscovf3", "gausscovf1"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.frac = 0.02),
               po("filter", filter = flt("relief"), filter.frac = 0.02),
-              po("filter", filter = flt("gausscov_f3st"), m = 1, filter.cutoff = 0),
+              po("filter", filter = flt("gausscov_f3st"), p0 = 0.01, m = 1, filter.cutoff = 0),
               po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0)
   )) %>>%
   po("unbranch", id = "filter_unbranch")
@@ -1155,7 +1155,7 @@ designs_l = lapply(custom_cvs, function(cv_) {
       tasks = task_,
       learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth,
                       at_kknn, at_gbm, at_rsm, at_bart, at_catboost,
-                      at_glmnet, at_cforest),
+                      at_glmnet), # , at_cforest
       resamplings = customo_
     )
   })

@@ -1,5 +1,6 @@
 library(fs)
 library(data.table)
+library(mlr3verse)
 library(mlr3batchmark)
 library(batchtools)
 library(duckdb)
@@ -30,6 +31,22 @@ ids_done = ids_done[job.id %in% results_files]
 # ids_done = ids_done[job.id %in% 200:250]
 ids_notdone = findNotDone(reg=reg)
 rbind(ids_notdone, ids_done[job.id %in% results_files])
+
+# errors I have solve
+# 1)
+# Error in (if (cv) glmnet::cv.glmnet else glmnet::glmnet)(x = data, y = target,  :
+# x should be a matrix with 2 or more columns
+# 2)
+# Error in if (p00 < p0) { : argument is of length zero
+#   This happened PipeOp gausscov_f3st's $train()
+# SOLVED: I think I solved this by adding p0 = 0.1 in arguments to gausscov_f3st
+# 3)
+# Error in constparties(nodes = forest, data = mf, weights = rw, fitted = fitted,  :
+#                         all(sapply(nodes, function(x) inherits(x, "partynode"))) is not TRUE
+#                       This happened PipeOp regr.cforest's $train()
+# 4)
+
+
 
 # import already saved predictions
 # fs::dir_ls("predictions")
@@ -91,7 +108,8 @@ get_backend = function(task_name = "taskRetWeek") {
   task_ = task_$data(rows = task_$rownames, cols = id_cols)
   return(task_)
 }
-id_cols = c("symbol", "date", "yearmonthid", "..row_id", "epsDiff", "nincr", "nincr2y", "nincr3y")
+id_cols = c("symbol", "date", "yearmonthid", "..row_id", "epsDiff", "nincr",
+            "nincr2y", "nincr3y")
 taskRetWeek    = get_backend()
 # taskRetMonth   = get_backend("taskRetMonth")
 # taskRetMonth2  = get_backend("taskRetMonth2")
