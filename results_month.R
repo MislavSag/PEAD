@@ -85,16 +85,6 @@ predictions = rbindlist(predictions)
 predictions = merge(predictions_meta, predictions, by = "id")
 predictions = as.data.table(predictions)
 
-# TEMPORARLY: filter only week tasks
-predictions[, unique(cv)]
-predictions = predictions[cv %in% c("113", "101", "89")]
-
-# save predictions
-# time_ = strftime(Sys.time(), format = "%Y%m%d%H%M%S")
-# file_name = paste0("predictions/predictions-", time_, ".rds")
-# if (!fs::dir_exists("predictions")) fs::dir_create("predictions")
-# saveRDS(predictions, file_name)
-
 # import tasks
 tasks_files = dir_ls(fs::path(PATH, "problems"))
 tasks = lapply(tasks_files, readRDS)
@@ -111,20 +101,20 @@ get_backend = function(task_name = "taskRetWeek") {
 id_cols = c("symbol", "date", "yearmonthid", "..row_id", "epsDiff", "nincr",
             "nincr2y", "nincr3y")
 taskRetWeek    = get_backend()
-# taskRetMonth   = get_backend("taskRetMonth")
-# taskRetMonth2  = get_backend("taskRetMonth2")
-# taskRetQuarter = get_backend("taskRetQuarter")
-# # test = all(c(identical(taskRetWeek, taskRetMonth),
-# #              identical(taskRetWeek, taskRetMonth2),
-# #              identical(taskRetWeek, taskRetQuarter)))
-# print(test)
-# if (test) {
+taskRetMonth   = get_backend("taskRetMonth")
+taskRetMonth2  = get_backend("taskRetMonth2")
+taskRetQuarter = get_backend("taskRetQuarter")
+test = all(c(identical(taskRetWeek, taskRetMonth),
+             identical(taskRetWeek, taskRetMonth2),
+             identical(taskRetWeek, taskRetQuarter)))
+print(test)
+if (test) {
   backend = copy(taskRetWeek)
   setnames(backend, "..row_id", "row_ids")
-#
-#   rm(list = c("taskRetWeek", "taskRetMonth", "taskRetMonth2", "taskRetQuarter"))
-#   rm(list = c("task_ret_week", "task_ret_month", "task_ret_month2", "task_ret_quarter"))
-# }
+
+  rm(list = c("taskRetWeek", "taskRetMonth", "taskRetMonth2", "taskRetQuarter"))
+  rm(list = c("task_ret_week", "task_ret_month", "task_ret_month2", "task_ret_quarter"))
+}
 
 # measures
 source("Linex.R")
@@ -141,102 +131,6 @@ setnames(predictions,
          c("task_names", "learner_names", "cv_names"),
          c("task", "learner", "cv"),
          skip_absent = TRUE)
-
-
-
-
-
-
-
-# # get results
-# plan("multisession", workers = 4L)
-# start_time = Sys.time()
-# results = future_lapply(ids_done[, job.id], function(id_) {
-#   # id_ = 1271
-#   print(id_)
-#   # bmr object
-#   system.time({bmrs = reduceResultsBatchmark(2:100, store_backends = FALSE, reg = reg)})
-#   bmrs = reduceResultsBatchmark(2:10, store_backends = FALSE, reg = reg)
-#   bmrs_dt = as.data.table(bmrs)
-#
-#   # get predictions
-#   task_names = vapply(bmrs_dt$task, `[[`, FUN.VALUE = character(1L), "id")
-#   resample_names = vapply(bmrs_dt$resampling, `[[`, FUN.VALUE = character(1L), "id")
-#   cv_names = gsub("custom_|_.*", "", resample_names)
-#   fold_names = gsub("custom_\\d+_", "", resample_names)
-#   learner_names = vapply(bmrs_dt$learner, `[[`, FUN.VALUE = character(1L), "id")
-#   learner_names = gsub(".*\\.regr\\.|\\.tuned", "", learner_names)
-#   predictions = as.data.table(bmrs_dt$prediction[[1]])
-#   setnames(predictions, "response.V1", "response", skip_absent=TRUE)
-#   predictions = cbind(task_names, learner_names, cv_names, fold_names, predictions)
-#   # predictions = lapply(seq_along(predictions), function(j)
-#   #   cbind(task = task_names[[j]],
-#   #         learner = learner_names[[j]],
-#   #         cv = cv_names[[j]],
-#   #         fold = fold_names[[j]],
-#   #         predictions[[j]]))
-#
-#   return(predictions)
-# })
-# end_time = Sys.time()
-# end_time - start_time
-# # 1: Time difference of 40.88229 secs
-# # 2: Time difference of 19.56966 secs
-# # 4 1572: Time difference of 39.13002 mins
-# # 8 6378:Time difference of 2.479138 hours
-# predictions = rbindlist(results, fill = TRUE)
-#
-# # save predictions
-# time_ = strftime(Sys.time(), format = "%Y%m%d%H%M%S")
-# file_name = paste0("predictions/predictions-", time_, ".rds")
-# if (!fs::dir_exists("predictions")) fs::dir_create("predictions")
-# saveRDS(predictions, file_name)
-#
-# # import tasks
-# tasks_files = dir_ls(fs::path(PATH, "problems"))
-# tasks = lapply(tasks_files, readRDS)
-# names(tasks) = lapply(tasks, function(t) t$data$id)
-# tasks
-#
-# # backends
-# get_backend = function(task_name = "taskRetWeek") {
-#   task_ = tasks[names(tasks) == task_name][[1]]
-#   task_ = task_$data$backend
-#   task_ = task_$data(rows = task_$rownames, cols = id_cols)
-#   return(task_)
-# }
-# id_cols = c("symbol", "date", "yearmonthid", "..row_id", "epsDiff", "nincr", "nincr2y", "nincr3y")
-# taskRetWeek    = get_backend()
-# # taskRetMonth   = get_backend("taskRetMonth")
-# # taskRetMonth2  = get_backend("taskRetMonth2")
-# # taskRetQuarter = get_backend("taskRetQuarter")
-# # test = all(c(identical(taskRetWeek, taskRetMonth),
-# #              identical(taskRetWeek, taskRetMonth2),
-# #              identical(taskRetWeek, taskRetQuarter)))
-# print(test)
-# if (test) {
-#   backend = copy(taskRetWeek)
-#   setnames(backend, "..row_id", "row_ids")
-#
-#   rm(list = c("taskRetWeek", "taskRetMonth", "taskRetMonth2", "taskRetQuarter"))
-#   rm(list = c("task_ret_week", "task_ret_month", "task_ret_month2", "task_ret_quarter"))
-# }
-#
-# # measures
-# source("Linex.R")
-# source("AdjLoss2.R")
-# source("PortfolioRet.R")
-# mlr_measures$add("linex", Linex)
-# mlr_measures$add("adjloss2", AdjLoss2)
-# mlr_measures$add("portfolio_ret", PortfolioRet)
-#
-# # merge backs and predictions
-# predictions = backend[predictions, on = c("row_ids")]
-# predictions[, date := as.Date(date)]
-# setnames(predictions,
-#          c("task_names", "learner_names", "cv_names"),
-#          c("task", "learner", "cv"),
-#          skip_absent = TRUE)
 
 
 # PREDICTIONS RESULTS -----------------------------------------------------
@@ -301,13 +195,13 @@ predictions_ensemble[, (cols_sign_response_neg) := lapply(sign_response_seq, fun
 predictions_ensemble[median_response > 0 & sd_response < 0.15, .(tr = truth_sign, res = 1)][, sum(tr == res) / length(tr)]
 
 # check only sign ensamble performance
-# res = lapply(cols_sign_response_pos[1:5], function(x) {
-#   print(x)
-#   predictions_ensemble[get(x) == TRUE & sd_response < 0.3][
-#     , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
-# })
-# names(res) = cols_sign_response_pos
-# res
+res = lapply(cols_sign_response_pos, function(x) {
+  print(x)
+  predictions_ensemble[get(x) == TRUE][
+    , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
+})
+names(res) = cols_sign_response_pos
+res
 
 # check only sign ensamble performance all
 res = lapply(cols_sign_response_pos, function(x) {
