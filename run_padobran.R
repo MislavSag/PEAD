@@ -317,52 +317,55 @@ custom_cvs[[4]] = create_custom_rolling_windows(
   test_duration = 1
 )
 
-# visualize test
-library(ggplot2)
-library(patchwork)
-prepare_cv_plot = function(x, set = "train") {
-  x = lapply(x, function(x) data.table(ID = x))
-  x = rbindlist(x, idcol = "fold")
-  x[, fold := as.factor(fold)]
-  x[, set := as.factor(set)]
-  x[, ID := as.numeric(ID)]
-}
-plot_cv = function(cv, n = 5) {
-  # cv = custom_cvs[[1]]
-  print(cv)
-  cv_test_inner = cv$inner
-  cv_test_outer = cv$outer
+# # visualize test
+# library(ggplot2)
+# library(patchwork)
+# prepare_cv_plot = function(x, set = "train") {
+#   x = lapply(x, function(x) data.table(ID = x))
+#   x = rbindlist(x, idcol = "fold")
+#   x[, fold := as.factor(fold)]
+#   x[, set := as.factor(set)]
+#   x[, ID := as.numeric(ID)]
+# }
+# plot_cv = function(cv, n = 5) {
+#   # cv = custom_cvs[[1]]
+#   print(cv)
+#   cv_test_inner = cv$inner
+#   cv_test_outer = cv$outer
+#
+#   # define task
+#   if (grepl("taskRetQuarter", cv_test_inner$id)) {
+#     task_ = task_ret_quarter$clone()
+#   } else if (grepl("taskRetMonth2", cv_test_inner$id)) {
+#     task_ = task_ret_month2$clone()
+#   } else if (grepl("taskRetMonth", cv_test_inner$id)) {
+#     task_ = task_ret_month$clone()
+#   } else if (grepl("taskRetWeek", cv_test_inner$id)) {
+#     task_ = task_ret_week$clone()
+#   }
+#
+#   # prepare train, tune and test folds
+#   train_sets = cv_test_inner$instance$train[1:n]
+#   train_sets = prepare_cv_plot(train_sets)
+#   tune_sets = cv_test_inner$instance$test[1:n]
+#   tune_sets = prepare_cv_plot(tune_sets, set = "tune")
+#   test_sets = cv_test_outer$instance$test[1:n]
+#   test_sets = prepare_cv_plot(test_sets, set = "test")
+#   dt_vis = rbind(train_sets[seq(1, nrow(train_sets), 1000)],
+#                  tune_sets[seq(1, nrow(tune_sets), 500)],
+#                  test_sets)
+#   substr(colnames(dt_vis), 1, 1) <- toupper(substr(colnames(dt_vis), 1, 1))
+#   ggplot(dt_vis, aes(x = Fold, y = ID, color = Set)) +
+#     geom_point() +
+#     theme_minimal() +
+#     coord_flip() +
+#     labs(x = "", y = '',
+#          title = paste0(gsub("-.*|taskRet", "", cv_test_outer$id), " horizont"))
+# }
+# plots = lapply(custom_cvs[c(1:4)], plot_cv, n = 35)
+# wp = wrap_plots(plots)
+# ggsave("plot_cv.png", plot = wp, width = 10, height = 8, dpi = 300)
 
-  # define task
-  if (grepl("taskRetQuarter", cv_test_inner$id)) {
-    task_ = task_ret_quarter$clone()
-  } else if (grepl("taskRetMonth2", cv_test_inner$id)) {
-    task_ = task_ret_month2$clone()
-  } else if (grepl("taskRetMonth", cv_test_inner$id)) {
-    task_ = task_ret_month$clone()
-  } else if (grepl("taskRetWeek", cv_test_inner$id)) {
-    task_ = task_ret_week$clone()
-  }
-
-  # prepare train, tune and test folds
-  train_sets = cv_test_inner$instance$train[1:n]
-  train_sets = prepare_cv_plot(train_sets)
-  tune_sets = cv_test_inner$instance$test[1:n]
-  tune_sets = prepare_cv_plot(tune_sets, set = "tune")
-  test_sets = cv_test_outer$instance$test[1:n]
-  test_sets = prepare_cv_plot(test_sets, set = "test")
-  dt_vis = rbind(train_sets[seq(1, nrow(train_sets), 1000)],
-                 tune_sets[seq(1, nrow(tune_sets), 500)],
-                 test_sets)
-  ggplot(dt_vis, aes(x = fold, y = ID, color = set)) +
-    geom_point() +
-    theme_minimal() +
-    coord_flip() +
-    labs(x = "", y = '', title = cv_test_outer$id)
-}
-plots = lapply(custom_cvs[c(1:4)], plot_cv, n = 30)
-wp = wrap_plots(plots)
-ggsave("plot_cv.png", plot = wp, width = 10, height = 8, dpi = 300)
 
 
 # ADD PIPELINES -----------------------------------------------------------
@@ -484,7 +487,18 @@ search_space_template = ps(
 # random forest graph
 graph_rf = graph_template %>>%
   po("learner", learner = lrn("regr.ranger"))
-plot(graph_rf)
+# # p = plot(graph_rf, html = TRUE, visOptions(autoResize = TRUE))
+#
+# # plot(graph_rf, html = FALSE, edge.label.cex = 0.8, vertex.label.cex = 0.1)
+# plot(graph_rf,
+#      html = TRUE,
+#      visOptions(
+#        width = "100%", height = "600px",
+#        nodes = list(font = list(size = 14)), # Adjust node text size
+#        edges = list(font = list(size = 10)) # Adjust edge text size
+#      ))
+# # visSave(p, file = "network.html")
+
 graph_rf = as_learner(graph_rf)
 as.data.table(graph_rf$param_set)[, .(id, class, lower, upper, levels)]
 search_space_rf = search_space_template$clone()
@@ -1126,3 +1140,14 @@ apptainer run image.sif run_job.R 0
 sh_file_name = "run_month.sh"
 file.create(sh_file_name)
 writeLines(sh_file, sh_file_name)
+
+
+
+# PRESENTATION ------------------------------------------------------------
+library(kableExtra)
+
+df = data.frame(
+  `Broj opservacija` = nrow(DT),
+  `Broj prediktora`  = length(cols_features)
+)
+kbl(df)
