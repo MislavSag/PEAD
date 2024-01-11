@@ -246,7 +246,7 @@ create_custom_rolling_windows <- function(task,
     start_date = if (duration_unit == "week") {
       start_date %m+% weeks(1)
     } else {
-      ceiling_date(start_date %m+% months(1), "month")
+      start_date %m+% months(1)
     }
   }
 
