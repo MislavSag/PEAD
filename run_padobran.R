@@ -271,17 +271,6 @@ create_custom_rolling_windows <- function(task,
   return(list(outer = custom_outer, inner = custom_inner))
 }
 
-# Example usage
-train_duration <- 24
-gap_duration <- 1
-tune_duration <- 3
-test_duration <- 1
-
-# Assume task is already defined
-# task <- ...
-
-resampling_instances <- create_custom_rolling_windows(task, "week", train_duration, gap_duration, tune_duration, test_duration)
-
 # create list of cvs
 custom_cvs = list()
 custom_cvs[[1]] = create_custom_rolling_windows(
@@ -289,7 +278,7 @@ custom_cvs[[1]] = create_custom_rolling_windows(
   duration_unit = "month",
   train_duration = 48,
   gap_duration = 1,
-  tune_duration = 3 * 4,
+  tune_duration = 3,
   test_duration = 1
 )
 custom_cvs[[2]] = create_custom_rolling_windows(
@@ -487,6 +476,28 @@ search_space_template = ps(
 # random forest graph
 graph_rf = graph_template %>>%
   po("learner", learner = lrn("regr.ranger"))
+
+# PLOT GRAPH
+library(igraph)
+p = plot(graph_rf)
+
+df = graph_rf$edges[, list(from = src_id, to = dst_id)]
+# df = rbind(df, graph_rf$input[, list(from = "<INPUT>", to = op.id)])
+ig = igraph::graph_from_data_frame(as.data.frame(df[21:36]))
+layout = igraph::layout_with_sugiyama(ig)$layout
+if (!is.matrix(layout)) {
+  layout = t(layout)  # bug in igraph, dimension is dropped
+}
+layout[, 1] = layout[, 1] * .75
+layout[, 2] = layout[, 2] * .75
+defaultargs = list(vertex.shape = "crectangle", vertex.size = 60, vertex.size2 = 15 * 2.5, vertex.color = 0,
+                   xlim = range(layout[, 1]) + c(-0.3, 0.3),
+                   ylim = range(layout[, 2]) + c(-0.1, 0.1),
+                   rescale = FALSE,
+                   asp = 0.4
+)
+invoke(graphics::plot, ig, layout = layout, .args = defaultargs)
+
 # # p = plot(graph_rf, html = TRUE, visOptions(autoResize = TRUE))
 #
 # # plot(graph_rf, html = FALSE, edge.label.cex = 0.8, vertex.label.cex = 0.1)
