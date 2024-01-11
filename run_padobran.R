@@ -1143,11 +1143,11 @@ writeLines(sh_file, sh_file_name)
 
 
 
-# PRESENTATION ------------------------------------------------------------
-library(kableExtra)
-
-df = data.frame(
-  `Broj opservacija` = nrow(DT),
-  `Broj prediktora`  = length(cols_features)
-)
-kbl(df)
+# # PRESENTATION ------------------------------------------------------------
+# library(kableExtra)
+#
+# df = data.frame(
+#   `Broj opservacija` = nrow(DT),
+#   `Broj prediktora`  = length(cols_features)
+# )
+# kbl(df)
