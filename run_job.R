@@ -123,7 +123,7 @@ UpdateBuffer = R6Class(
 if (interactive()) {
   reg = loadRegistry("experiments_test")
 } else {
-  reg = loadRegistry("experimentsmonth")
+  reg = loadRegistry("experiments")
 }
 
 # extract integer

@@ -10,4 +10,4 @@
 cd ${PBS_O_WORKDIR}
 apptainer run image.sif run_job.R 1
 
-# 8784 - 8045
+# 8784 - 8051
