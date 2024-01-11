@@ -10,8 +10,10 @@ From: r-base:4.3.0
   apt install libcurl4-openssl-dev -y
 
   # mlr3
-  R --slave -e 'install.packages("AzureStor")'
+  R --slave -e 'install.packages("R6")'
   R --slave -e 'install.packages("data.table")'
+  R --slave -e 'install.packages("lubridate")'
+  R --slave -e 'install.packages("AzureStor")'
   R --slave -e 'install.packages("future")'
   R --slave -e 'install.packages("future.apply")'
   R --slave -e 'install.packages("gausscov")'
@@ -28,7 +30,6 @@ From: r-base:4.3.0
   R --slave -e 'install.packages("batchtools")'
   R --slave -e 'install.packages("paradox")'
   R --slave -e 'install.packages("ranger")'
-  R --slave -e 'install.packages("R6")'
   R --slave -e 'install.packages("bit64")'
   R --slave -e 'install.packages("xgboost")'
   R --slave -e 'install.packages("dbarts")'
