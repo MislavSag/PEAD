@@ -7,6 +7,7 @@ library(duckdb)
 library(PerformanceAnalytics)
 library(AzureStor)
 library(future.apply)
+library(matrixStats)
 
 
 # creds
@@ -82,6 +83,10 @@ predictions = lapply(predictions_l, function(x) {
 predictions = rbindlist(predictions)
 predictions = merge(predictions_meta, predictions, by = "id")
 predictions = as.data.table(predictions)
+
+######## TEMP ###########
+predictions = predictions[!(task == 'taskRetMonth' & cv == 67)]
+######## TEMP ###########
 
 # import tasks
 tasks_files = dir_ls(fs::path(PATH, "problems"))
@@ -162,75 +167,88 @@ predictions_dt[, measures(truth_sign, response_sign), by = c("cv", "task")]
 predictions_dt[, measures(truth_sign, response_sign), by = c("cv", "learner")]
 # predictions[, measures(truth_sign, response_sign), by = c("cv", "task", "learner")][order(V1)]
 
-# hit ratio for ensamble
-predictions_ensemble = predictions[, .(
-  mean_response = mean(response),
-  median_response = median(response),
-  sign_response = sum(sign(response)),
-  sd_response = sd(response),
-  truth = mean(truth),
-  symbol = symbol,
-  date = date,
-  yearmonthid = yearmonthid,
-  epsDiff = epsDiff
-),
-by = c("task", "row_ids")]
-predictions_ensemble[, `:=`(
-  truth_sign = as.factor(sign(truth)),
-  response_sign_median = as.factor(sign(median_response)),
-  response_sign_mean = as.factor(sign(mean_response))
-)]
-predictions_ensemble = unique(predictions_ensemble, by = c("task", "row_ids"))
-sign_response_max = predictions_ensemble[, max(sign_response, na.rm = TRUE)]
-sign_response_seq = seq(as.integer(sign_response_max / 2), sign_response_max - 1)
-cols_sign_response_pos = paste0("response_sign_sign_pos", sign_response_seq)
-predictions_ensemble[, (cols_sign_response_pos) := lapply(sign_response_seq, function(x) sign_response > x)]
-cols_sign_response_neg = paste0("response_sign_sign_neg", sign_response_seq)
-predictions_ensemble[, (cols_sign_response_neg) := lapply(sign_response_seq, function(x) sign_response < -x)]
-# cols_ = colnames(predictions_dt_ensemble)[24:ncol(predictions_dt_ensemble)]
-# predictions_dt_ensemble[, lapply(.SD, function(x) sum(x == TRUE)), .SDcols = cols_]
+# create truth factor
+predictions_dt[, truth_sign := as.factor(sign(truth))]
 
-predictions_ensemble[median_response > 0 & sd_response < 0.15, .(tr = truth_sign, res = 1)][, sum(tr == res) / length(tr)]
+# prediction to wide format
+dt = dcast(
+  predictions_dt,
+  task + symbol + date + epsDiff + nincr + nincr2y + nincr3y + truth + truth_sign ~ learner,
+  value.var = "response"
+)
 
-# check only sign ensamble performance
-res = lapply(cols_sign_response_pos, function(x) {
-  print(x)
-  predictions_ensemble[get(x) == TRUE][
-    , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
-})
-names(res) = cols_sign_response_pos
-res
+# ensambles
+cols = colnames(dt)
+cols = cols[which(cols == "bart"):ncol(dt)]
+p = dt[, ..cols]
+pm = as.matrix(p)
+dt = cbind(dt, mean_resp = rowMeans(p, na.rm = TRUE))
+dt = cbind(dt, median_resp = rowMedians(pm, na.rm = TRUE))
+dt = cbind(dt, sum_resp = rowSums2(pm, na.rm = TRUE))
+dt = cbind(dt, iqrs_resp = rowIQRs(pm, na.rm = TRUE))
+dt = cbind(dt, sd_resp = rowMads(pm, na.rm = TRUE))
+dt = cbind(dt, q9_resp = rowQuantiles(pm, probs = 0.9, na.rm = TRUE))
+dt = cbind(dt, max_resp = rowMaxs(pm, na.rm = TRUE))
+dt = cbind(dt, min_resp = rowMins(pm, na.rm = TRUE))
+dt = cbind(dt, all_buy = rowAlls(pm >= 0, na.rm = TRUE))
+dt = cbind(dt, all_sell = rowAlls(pm < 0, na.rm = TRUE))
+dt = cbind(dt, sum_buy = rowSums2(pm >= 0, na.rm = TRUE))
+dt = cbind(dt, sum_sell = rowSums2(pm < 0, na.rm = TRUE))
+dt
 
-# check only sign ensamble performance all
-res = lapply(cols_sign_response_pos, function(x) {
-  predictions_ensemble[get(x) == TRUE][
-    , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1)))]
-})
-names(res) = cols_sign_response_pos
-res
+# results by ensamble statistics for classification measures
+calculate_measures = function(t, res) {
+  list(acc       = mlr3measures::acc(t, res),
+       fbeta     = mlr3measures::fbeta(t, res, positive = "1"),
+       tpr       = mlr3measures::tpr(t, res, positive = "1"),
+       precision = mlr3measures::precision(t, res, positive = "1"),
+       tnr       = mlr3measures::tnr(t, res, positive = "1"),
+       npv       = mlr3measures::npv(t, res, positive = "1"))
+}
+dt[, calculate_measures(truth_sign, as.factor(sign(mean_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(median_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(sum_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(max_resp + min_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(q9_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(max_resp))), by = task]
 
-# check only sign ensamble performance
-res = lapply(cols_sign_response_neg[1:5], function(x) { # TODO: REMOVE indexing later
-  predictions_ensemble[get(x) == TRUE][
-    , mlr3measures::acc(truth_sign, factor(as.integer(get(x)), levels = c(-1, 1))), by = c("task")]
-})
-names(res) = cols_sign_response_neg[1:5]
-res
+dt[sd_resp > 2, calculate_measures(truth_sign, as.factor(sign(mean_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(median_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(sum_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(max_resp + min_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(q9_resp))), by = task]
+dt[, calculate_measures(truth_sign, as.factor(sign(max_resp))), by = task]
 
-# save to azure for QC backtest
+
+dt[all_buy == TRUE, calculate_measures(truth_sign, factor(ifelse(all_buy, 1, -1), levels = c(-1, 1)))]
+dt[all_sell == TRUE, calculate_measures(truth_sign, factor(ifelse(all_sell, -1, 1), levels = c(-1, 1)))]
+dt[all_sell == TRUE, calculate_measures(truth_sign, factor(ifelse(all_sell, -1, 1), levels = c(-1, 1)))]
+dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 6, 1, -1), levels = c(-1, 1)))]
+dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 7, 1, -1), levels = c(-1, 1)))]
+dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 8, 1, -1), levels = c(-1, 1)))]
+dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 9, 1, -1), levels = c(-1, 1)))]
+dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 9, 1, -1), levels = c(-1, 1))), by = task]
+dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 10, 1, -1), levels = c(-1, 1)))]
+dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 10, 1, -1), levels = c(-1, 1))), by = task]
+dt[, calculate_measures(truth_sign, factor(ifelse(sum_sell > 10, -1, 1), levels = c(-1, 1)))]
+
+# calculate what wuld be sum of truth if xgboost, ranger or rsm are greater than 0
+cols = colnames(dt)
+cols = cols[which(cols == "bart"):which(cols == "sum_resp")]
+cols = c("task", cols)
+melt(na.omit(dt[, ..cols]), id.vars = "task")[value > 0, sum(value), by = .(task, variable)][order(V1)]
+melt(na.omit(dt[, ..cols]), id.vars = "task")[value > 0 & value < 2, sum(value), by = .(task, variable)][order(V1)]
+
+#  save to azure for QC backtest
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
+file_name_ =  paste0("pead_qc.csv")
+qc_data = unique(na.omit(dt), by = c("task", "symbol", "date"))
+storage_write_csv(qc_data, cont, file_name_)
+
 lapply(unique(predictions_ensemble$task), function(x) {
   # debug
   # x = "taskRetWeek"
 
-  # prepare data
-  # y = predictions_ensemble[median_response > 0 & sd_response < 0.15]
-  # y = y[, response_sign_sign_pos16 := TRUE]
-  y = predictions_ensemble[task == x]
-  y = na.omit(y)
-  cols = colnames(y)[grep("response_sign", colnames(y))]
-  cols = c("symbol", "date", "epsDiff", "mean_response", "sd_response", cols)
-  y = y[, ..cols]
   y = unique(y)
 
   # remove where all false
@@ -263,6 +281,86 @@ lapply(unique(predictions_ensemble$task), function(x) {
   # universe = y[, .(date, symbol)]
   # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
 })
+
+
+# #  save to azure for QC backtest
+# cont = storage_container(BLOBENDPOINT, "qc-backtest")
+# lapply(unique(predictions_ensemble$task), function(x) {
+#   # debug
+#   # x = "taskRetWeek"
+#
+#   # prepare data
+#   # y = predictions_ensemble[median_response > 0 & sd_response < 0.15]
+#   # y = y[, response_sign_sign_pos16 := TRUE]
+#   y = predictions_ensemble[task == x]
+#   y = na.omit(y)
+#   cols = colnames(y)[grep("response_sign", colnames(y))]
+#   cols = c("symbol", "date", "epsDiff", "mean_response", "sd_response", cols)
+#   y = y[, ..cols]
+#   y = unique(y)
+#
+#   # remove where all false
+#   # y = y[response_sign_sign_pos13 == TRUE]
+#
+#   # min and max date
+#   y[, min(date)]
+#   y[, max(date)]
+#
+#   # by date
+#   # cols_ = setdiff(cols, "date")
+#   # y = y[, lapply(.SD, function(x) paste0(x, collapse = "|")), by = date]
+#   # y[, date := as.character(date)]
+#   # setorder(y, date)
+#
+#   # y = y[, .(
+#   #   symbol = paste0(symbol, collapse = "|"),
+#   #   response = paste0(response, collapse = "|"),
+#   #   epsdiff = paste0(epsDiff, collapse = "|"),
+#   #
+#   # ), by = date]
+#
+#   # order
+#   setorder(y, date)
+#
+#   # save to azure blob
+#   print(colnames(y))
+#   file_name_ =  paste0("pead-", x, ".csv")
+#   storage_write_csv(y, cont, file_name_)
+#   # universe = y[, .(date, symbol)]
+#   # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
+# })
+#
+# # save to azure specific model for QC backtest
+# cont = storage_container(BLOBENDPOINT, "qc-backtest")
+# model_choose = "rsm"
+# lapply(unique(predictions$task), function(x) {
+#   # debug
+#   # x = "taskRetWeek"
+#
+#   # prepare data
+#   y = predictions[task == x & learner == model_choose]
+#   y = na.omit(y)
+#   cols = c("symbol", "date", "epsDiff", "response")
+#   y = y[, ..cols]
+#   y = unique(y)
+#
+#   # order
+#   setorder(y, date)
+#
+#   #
+#   y[, `:=`(
+#     response_sign_mean = response,
+#     response_sign_sign_pos1 = response > 0,
+#     response_sign_sign_neg1 = response < 0,
+#     mean_response = response,
+#     sd_response = 1
+#   )]
+#
+#
+#   # save to azure blob
+#   file_name_ =  paste0("pead-", x, "-", model_choose, ".csv")
+#   storage_write_csv(y, cont, file_name_)
+# })
 
 
 # SYSTEMIC RISK -----------------------------------------------------------
