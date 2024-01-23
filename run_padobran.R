@@ -56,7 +56,7 @@ pead_file_local = list.files(
 if (interactive()) {
   DT = fread(pead_file_local)
 } else {
-  DT = fread("pead-predictors-20231106.csv")
+  DT = fread("pead-predictors-20241106.csv")
 }
 
 # create group variable
@@ -365,18 +365,18 @@ source("AdjLoss2.R")
 source("PortfolioRet.R")
 
 # add my pipes to mlr dictionary
-mlr_pipeops$add("uniformization", PipeOpUniform)
+mlr_pipeops$add("uniformization", finautoml::PipeOpUniform)
 # mlr_pipeops$add("winsorize", PipeOpWinsorize)
-mlr_pipeops$add("winsorizesimple", PipeOpWinsorizeSimple)
+mlr_pipeops$add("winsorizesimple", finautoml::PipeOpWinsorizeSimple)
 # mlr_pipeops$add("winsorizesimplegroup", PipeOpWinsorizeSimpleGroup)
-mlr_pipeops$add("dropna", PipeOpDropNA)
-mlr_pipeops$add("dropnacol", PipeOpDropNACol)
-mlr_pipeops$add("dropcorr", PipeOpDropCorr)
+mlr_pipeops$add("dropna", finautoml::PipeOpDropNA)
+mlr_pipeops$add("dropnacol", finautoml::PipeOpDropNACol)
+mlr_pipeops$add("dropcorr", finautoml::PipeOpDropCorr)
 # mlr_pipeops$add("pca_explained", PipeOpPCAExplained)
-mlr_pipeops$add("filter_target", PipeOpFilterRegrTarget)
+mlr_pipeops$add("filter_target", finautoml::PipeOpFilterRegrTarget)
 mlr_filters$add("gausscov_f1st", FilterGausscovF1st)
 mlr_filters$add("gausscov_f3st", FilterGausscovF3st)
-mlr_measures$add("linex", Linex)
+mlr_measures$add("linex", finautoml::Linex)
 mlr_measures$add("adjloss2", AdjLoss2)
 mlr_measures$add("portfolio_ret", PortfolioRet)
 
