@@ -468,35 +468,37 @@ search_space_template = ps(
   # interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix"))
 )
 
-# show all combinations from search space, like in grid
-sp_grid = generate_design_grid(search_space_template, 1)
-sp_grid = sp_grid$data
-sp_grid
-sp_grid[!is.na(gausscov_f3st.p0)]
-sp_grid[!is.na(gausscov_f3st.p0), unique(gausscov_f3st.p0)]
-sp_grid[!is.na(gausscov_f1st.p0), unique(gausscov_f1st.p0)]
-sp_grid[!is.na(jmi.filter.nfeat), unique(jmi.filter.nfeat)]
+if (interactive()) {
+  # show all combinations from search space, like in grid
+  sp_grid = generate_design_grid(search_space_template, 1)
+  sp_grid = sp_grid$data
+  sp_grid
+  sp_grid[!is.na(gausscov_f3st.p0)]
+  sp_grid[!is.na(gausscov_f3st.p0), unique(gausscov_f3st.p0)]
+  sp_grid[!is.na(gausscov_f1st.p0), unique(gausscov_f1st.p0)]
+  sp_grid[!is.na(jmi.filter.nfeat), unique(jmi.filter.nfeat)]
 
-# test graph preprocesing
-task_ = task_ret_week$clone()
-# task_$filter(1:10000)
-task_$nrow
-gr_test = graph_template$clone()
-gr_test$param_set$values$filter_target_branch.selection = "filter_target_select"
-gr_test$param_set$values$filter_target_id.q = 0.2
-gr_test$param_set$values$subsample.frac = 0.6
-gr_test$param_set$values$dropcorr.cutoff = 0.99
-gr_test$param_set$values$filter_branch.selection = "gausscovf3"
-gr_test$param_set$values$gausscov_f1st.p0 = 0.05
-gr_test_res = gr_test_1$train(task_$clone())
-gr_test_res$removeconstants_3.output$data()
-# filter_target_select with gausscov1 0.05: retExcessStand5  bbandsDn5 feastsCurvature264 freeCashFlowYield returnOnAssets   returns2
-# nop_filter_target with gausscov1 0.05   : retExcessStand5
-# [1] "retExcessStand5"      "catch22COTrev1Num264" "dviDvi132"            "ep"                   "feastsLinearity5"     "freeCashFlowYield"
-# [7] "keltnerchannelsMavg5" "kurtosis10"           "ntisYear"             "percentRank5"         "returns2"             "rsi5"
-# [13] "sgr"                  "skew10"               "sp500RetWeek"         "t10y2y"               "vix"                  "PC17"
-# [19] "PC38"
-# filter_target_select with gausscov3 0.05: retExcessStand5 freeCashFlowYield  ntisYear  returns2        roe tSFEL0LPCC0264       tbl
+  # test graph preprocesing
+  task_ = task_ret_week$clone()
+  # task_$filter(1:10000)
+  task_$nrow
+  gr_test = graph_template$clone()
+  gr_test$param_set$values$filter_target_branch.selection = "filter_target_select"
+  gr_test$param_set$values$filter_target_id.q = 0.2
+  gr_test$param_set$values$subsample.frac = 0.6
+  gr_test$param_set$values$dropcorr.cutoff = 0.99
+  gr_test$param_set$values$filter_branch.selection = "gausscovf3"
+  gr_test$param_set$values$gausscov_f1st.p0 = 0.05
+  gr_test_res = gr_test$train(task_$clone())
+  gr_test_res$removeconstants_3.output$data()
+  # filter_target_select with gausscov1 0.05: retExcessStand5  bbandsDn5 feastsCurvature264 freeCashFlowYield returnOnAssets   returns2
+  # nop_filter_target with gausscov1 0.05   : retExcessStand5
+  # [1] "retExcessStand5"      "catch22COTrev1Num264" "dviDvi132"            "ep"                   "feastsLinearity5"     "freeCashFlowYield"
+  # [7] "keltnerchannelsMavg5" "kurtosis10"           "ntisYear"             "percentRank5"         "returns2"             "rsi5"
+  # [13] "sgr"                  "skew10"               "sp500RetWeek"         "t10y2y"               "vix"                  "PC17"
+  # [19] "PC38"
+  # filter_target_select with gausscov3 0.05: retExcessStand5 freeCashFlowYield  ntisYear  returns2        roe tSFEL0LPCC0264       tbl
+}
 
 # random forest graph
 graph_rf = graph_template %>>%
