@@ -584,19 +584,19 @@ search_space_catboost$add(
      regr.catboost.random_strength = p_int(lower = 0, upper = 3))
 )
 
-# # cforest graph
-# graph_cforest = graph_template %>>%
-#   po("learner", learner = lrn("regr.cforest"))
-# graph_cforest = as_learner(graph_cforest)
-# as.data.table(graph_cforest$param_set)[, .(id, class, lower, upper, levels)]
-# search_space_cforest = search_space_template$clone()
-# # https://cran.r-project.org/web/packages/partykit/partykit.pdf
-# search_space_cforest$add(
-#   ps(regr.cforest.mtryratio    = p_dbl(0.05, 1),
-#      regr.cforest.ntree        = p_int(lower = 10, upper = 2000),
-#      regr.cforest.mincriterion = p_dbl(0.1, 1),
-#      regr.cforest.replace      = p_lgl())
-# )
+# cforest graph
+graph_cforest = graph_template %>>%
+  po("learner", learner = lrn("regr.cforest"))
+graph_cforest = as_learner(graph_cforest)
+as.data.table(graph_cforest$param_set)[, .(id, class, lower, upper, levels)]
+search_space_cforest = search_space_template$clone()
+# https://cran.r-project.org/web/packages/partykit/partykit.pdf
+search_space_cforest$add(
+  ps(regr.cforest.mtryratio    = p_dbl(0.05, 1),
+     regr.cforest.ntree        = p_int(lower = 10, upper = 2000),
+     regr.cforest.mincriterion = p_dbl(0.1, 1),
+     regr.cforest.replace      = p_lgl())
+)
 
 # # gamboost graph
 # # Error in eval(predvars, data, env) : object 'adxDx14' not found
