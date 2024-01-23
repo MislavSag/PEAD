@@ -48,15 +48,15 @@ snakeToCamel <- function(snake_str) {
 print("Prepare data")
 
 # read predictors
-pead_file_local = list.files(
-  "F:/data/equity/us/predictors_daily/pead_predictors",
-  pattern = "pead",
-  full.names = TRUE
-)
 if (interactive()) {
+  pead_file_local = list.files(
+    "F:/data/equity/us/predictors_daily/pead_predictors",
+    pattern = "pead",
+    full.names = TRUE
+  )
   DT = fread(pead_file_local)
 } else {
-  DT = fread("pead-predictors-20241106.csv")
+  DT = fread("pead-predictors-20240119.csv")
 }
 
 # create group variable
@@ -1070,14 +1070,3 @@ apptainer run image.sif run_job.R 0
 sh_file_name = "run_month.sh"
 file.create(sh_file_name)
 writeLines(sh_file, sh_file_name)
-
-
-
-# # PRESENTATION ------------------------------------------------------------
-# library(kableExtra)
-#
-# df = data.frame(
-#   `Broj opservacija` = nrow(DT),
-#   `Broj prediktora`  = length(cols_features)
-# )
-# kbl(df)
