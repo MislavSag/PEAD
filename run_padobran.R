@@ -433,27 +433,11 @@ graph_template =
   # po("unbranch", id = "interaction_unbranch") %>>%
   po("removeconstants", id = "removeconstants_3", ratio = 0)
 
-# help functions and variables for search space
-simplify_p_fct = function(levels_vec) {
-  p_fct(
-    levels = levels_vec,
-    trafo = function(x, param_set) {
-      if (convert_to == "integer") {
-        return(as.integer(x))
-      } else if (convert_to == "double") {
-        return(as.double(x))
-      } else {
-        stop("Unknown conversion type")
-      }
-    },
-  )
-}
-gausscov_sp = as.character(seq(0.01, 0.11, by = 0.02))
-winsorize_sp =  c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)
-
 # hyperparameters template
 as.data.table(graph_template$param_set)[1:100]
 plot(graph_template)
+gausscov_sp = as.character(seq(0.01, 0.11, by = 0.02))
+winsorize_sp =  c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)
 search_space_template = ps(
   # filter target
   filter_target_branch.selection = p_fct(levels = c("nop_filter_target", "filter_target_select")),
@@ -541,25 +525,21 @@ search_space_xgboost = ps(
   # subsample for hyperband
   subsample.frac = p_dbl(0.6, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
-  dropcorr.cutoff = p_fct(
-    levels = c("0.80", "0.90", "0.95", "0.99"),
-    trafo = function(x, param_set) {
-      switch(x,
-             "0.80" = 0.80,
-             "0.90" = 0.90,
-             "0.95" = 0.95,
-             "0.99" = 0.99)
-    }
-  ),
-  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
+                          trafo = function(x, param_set) return(as.integer(x))),
+  winsorizesimple.probs_high = p_fct(as.character(winsorize_sp),
+                                     trafo = function(x, param_set) return(as.double(x))),
+  winsorizesimple.probs_low = p_fct(as.character(1-winsorize_sp),
+                                    trafo = function(x, param_set) return(as.double(x))),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
   filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
-  gausscov_f3st.p0 = p_fct(levels = gausscov_sp, depends = filter_branch.selection == "gausscovf3"),
-  gausscov_f1st.p0 = p_fct(levels = gausscov_sp, depends = filter_branch.selection == "gausscovf1"),
-  jmi.filter.nfeat = p_fct(levels = c("25", "50", "75", "100"), depends = filter_branch.selection == "jmi"),
+  gausscov_f1st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
+  gausscov_f3st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
+  jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
+                           trafo = function(x, param_set) return(as.integer(x))),
+
   # learner
   regr.xgboost.alpha     = p_dbl(0.001, 100, logscale = TRUE),
   regr.xgboost.max_depth = p_int(1, 20),
@@ -639,25 +619,20 @@ search_space_kknn = ps(
   # subsample for hyperband
   subsample.frac = p_dbl(0.6, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
-  dropcorr.cutoff = p_fct(
-    levels = c("0.80", "0.90", "0.95", "0.99"),
-    trafo = function(x, param_set) {
-      switch(x,
-             "0.80" = 0.80,
-             "0.90" = 0.90,
-             "0.95" = 0.95,
-             "0.99" = 0.99)
-    }
-  ),
-  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
+                          trafo = function(x, param_set) return(as.integer(x))),
+  winsorizesimple.probs_high = p_fct(as.character(winsorize_sp),
+                                     trafo = function(x, param_set) return(as.double(x))),
+  winsorizesimple.probs_low = p_fct(as.character(1-winsorize_sp),
+                                    trafo = function(x, param_set) return(as.double(x))),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
   filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
-  gausscov_f3st.p0 = p_fct(levels = gausscov_sp, depends = filter_branch.selection == "gausscovf3"),
-  gausscov_f1st.p0 = p_fct(levels = gausscov_sp, depends = filter_branch.selection == "gausscovf1"),
-  jmi.filter.nfeat = p_fct(levels = c("25", "50", "75", "100"), depends = filter_branch.selection == "jmi"),
+  gausscov_f1st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
+  gausscov_f3st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
+  jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
+                           trafo = function(x, param_set) return(as.integer(x))),
   # learner
   regr.kknn.k        = p_int(lower = 1, upper = 50, logscale = TRUE),
   regr.kknn.distance = p_dbl(lower = 1, upper = 5),
@@ -691,25 +666,20 @@ search_space_glmnet = ps(
   # subsample for hyperband
   subsample.frac = p_dbl(0.6, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
-  dropcorr.cutoff = p_fct(
-    levels = c("0.80", "0.90", "0.95", "0.99"),
-    trafo = function(x, param_set) {
-      switch(x,
-             "0.80" = 0.80,
-             "0.90" = 0.90,
-             "0.95" = 0.95,
-             "0.99" = 0.99)
-    }
-  ),
-  winsorizesimple.probs_high = p_fct(levels = c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)),
-  winsorizesimple.probs_low = p_fct(levels = c(0.001, 0.01, 0.02, 0.03, 0.1, 0.2)),
+  dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
+                          trafo = function(x, param_set) return(as.integer(x))),
+  winsorizesimple.probs_high = p_fct(as.character(winsorize_sp),
+                                     trafo = function(x, param_set) return(as.double(x))),
+  winsorizesimple.probs_low = p_fct(as.character(1-winsorize_sp),
+                                    trafo = function(x, param_set) return(as.double(x))),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
   filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
-  gausscov_f3st.p0 = p_fct(levels = gausscov_sp, depends = filter_branch.selection == "gausscovf3"),
-  gausscov_f1st.p0 = p_fct(levels = gausscov_sp, depends = filter_branch.selection == "gausscovf1"),
-  jmi.filter.nfeat = p_fct(levels = c("25", "50", "75", "100"), depends = filter_branch.selection == "jmi"),
+  gausscov_f1st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
+  gausscov_f3st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
+  jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
+                           trafo = function(x, param_set) return(as.integer(x))),
   # learner
   regr.glmnet.s     = p_int(lower = 5, upper = 30),
   regr.glmnet.alpha = p_dbl(lower = 1e-4, upper = 1, logscale = TRUE)
