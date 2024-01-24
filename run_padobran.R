@@ -386,7 +386,7 @@ mlr_measures$add("portfolio_ret", PortfolioRet)
 gr = gunion(list(
   po("nop", id = "nop_union_pca"),
   po("pca", center = FALSE, rank. = 50),
-  po("ica", n.comp = 10)
+  po("ica", n.comp = 10) # Error in fastICA::fastICA(as.matrix(dt), n.comp = 10L, method = "C") : data must be matrix-conformal This happened PipeOp ica's $train()
 )) %>>% po("featureunion")
 filter_target_gr = po("branch",
                       options = c("nop_filter_target", "filter_target_select"),
@@ -418,11 +418,11 @@ graph_template =
   # add pca columns
   gr %>>%
   # filters
-  po("branch", options = c("jmi", "gausscovf3", "gausscovf1"), id = "filter_branch") %>>%
+  po("branch", options = c("jmi", "gausscovf1", "gausscovf3"), id = "filter_branch") %>>%
   gunion(list(po("filter", filter = flt("jmi"), filter.nfeat = 25),
               # po("filter", filter = flt("relief"), filter.nfeat = 25),
-              po("filter", filter = flt("gausscov_f3st"), p0 = 0.01, m = 1, filter.cutoff = 0),
-              po("filter", filter = flt("gausscov_f1st"), filter.cutoff = 0)
+              po("filter", filter = flt("gausscov_f1st"), p0 = 0.01, kmn=5, filter.cutoff = 0),
+              po("filter", filter = flt("gausscov_f3st"), p0 = 0.01, kmn=5, m = 1, filter.cutoff = 0)
   )) %>>%
   po("unbranch", id = "filter_unbranch") %>>%
   # modelmatrix
@@ -436,12 +436,13 @@ graph_template =
 # hyperparameters template
 as.data.table(graph_template$param_set)[1:100]
 plot(graph_template)
-gausscov_sp = as.character(seq(0.01, 0.11, by = 0.02))
+gausscov_sp = as.character(seq(0.1, 0.8, by = 0.1))
 winsorize_sp =  c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)
 search_space_template = ps(
   # filter target
   filter_target_branch.selection = p_fct(levels = c("nop_filter_target", "filter_target_select")),
-  filter_target_id.q = p_fct(levels = c(0.4, 0.3, 0.2, 0.1),
+  filter_target_id.q = p_fct(levels = c("0.4", "0.3", "0.2", "0.1"),
+                             trafo = function(x, param_set) return(as.double(x)),
                              depends = filter_target_branch.selection == "filter_target_select"),
   # subsample for hyperband
   subsample.frac = p_dbl(0.6, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
@@ -456,10 +457,15 @@ search_space_template = ps(
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
   filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
-  gausscov_f1st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
-  gausscov_f3st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
   jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
-                           trafo = function(x, param_set) return(as.integer(x)))
+                           trafo = function(x, param_set) return(as.integer(x)),
+                           depends = filter_branch.selection == "jmi"),
+  gausscov_f1st.p0 = p_fct(gausscov_sp,
+                           trafo = function(x, param_set) return(as.double(x)),
+                           depends = filter_branch.selection == "gausscovf1"),
+  gausscov_f3st.p0 = p_fct(gausscov_sp,
+                           trafo = function(x, param_set) return(as.double(x)),
+                           depends = filter_branch.selection == "gausscovf3")
   # # interaction
   # interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix"))
 )
@@ -471,30 +477,43 @@ if (interactive()) {
   sp_grid
   sp_grid[!is.na(dropcorr.cutoff)]
   sp_grid[!is.na(gausscov_f3st.p0)]
+  sp_grid[!is.na(gausscov_f1st.p0)]
   sp_grid[!is.na(gausscov_f3st.p0), unique(gausscov_f3st.p0)]
   sp_grid[!is.na(gausscov_f1st.p0), unique(gausscov_f1st.p0)]
   sp_grid[!is.na(jmi.filter.nfeat), unique(jmi.filter.nfeat)]
 
+  # help graph for testing preprocessing
+  preprocess_test = function(
+    fb_ = c("nop_filter_target", "filter_target_select"),
+    sc_ = c("uniformization", "scale"),
+    f_ = c("jmi", "gausscovf1", "gausscovf3"),
+    p0_ = 0.5
+    ) {
+    fb_ = match.arg(fb_) # fb_ = "nop_filter_target"
+    sc_ = match.arg(sc_) # sc_ = "uniformization"
+    f_ = match.arg(f_)   # f_ = "gausscovf3"
+    task_ = task_ret_week$clone()
+    nr = task_$nrow
+    task_$filter((nr-20000):nr)
+    gr_test = graph_template$clone()
+    gr_test$param_set$values$filter_target_branch.selection = fb_
+    # gr_test$param_set$values$filter_target_id.q = 0.3
+    # gr_test$param_set$values$subsample.frac = 0.6
+    # gr_test$param_set$values$dropcorr.cutoff = 0.99
+    # gr_test$param_set$values$scale_branch.selection = sc_
+    gr_test$param_set$values$filter_branch.selection = f_
+    gr_test$param_set$values$gausscov_f1st.p0 = p0_
+    gr_test$param_set$values$gausscov_f3st.p0 = p0_
+    gr_test$param_set$values$jmi.filter.nfeat = 50
+    return(gr_test$train(task_))
+  }
+
   # test graph preprocesing
-  task_ = task_ret_week$clone()
-  # task_$filter(1:10000)
-  task_$nrow
-  gr_test = graph_template$clone()
-  gr_test$param_set$values$filter_target_branch.selection = "filter_target_select"
-  gr_test$param_set$values$filter_target_id.q = 0.2
-  gr_test$param_set$values$subsample.frac = 0.6
-  gr_test$param_set$values$dropcorr.cutoff = 0.99
-  gr_test$param_set$values$filter_branch.selection = "gausscovf3"
-  gr_test$param_set$values$gausscov_f1st.p0 = 0.05
-  gr_test_res = gr_test$train(task_$clone())
-  gr_test_res$removeconstants_3.output$data()
-  # filter_target_select with gausscov1 0.05: retExcessStand5  bbandsDn5 feastsCurvature264 freeCashFlowYield returnOnAssets   returns2
-  # nop_filter_target with gausscov1 0.05   : retExcessStand5
-  # [1] "retExcessStand5"      "catch22COTrev1Num264" "dviDvi132"            "ep"                   "feastsLinearity5"     "freeCashFlowYield"
-  # [7] "keltnerchannelsMavg5" "kurtosis10"           "ntisYear"             "percentRank5"         "returns2"             "rsi5"
-  # [13] "sgr"                  "skew10"               "sp500RetWeek"         "t10y2y"               "vix"                  "PC17"
-  # [19] "PC38"
-  # filter_target_select with gausscov3 0.05: retExcessStand5 freeCashFlowYield  ntisYear  returns2        roe tSFEL0LPCC0264       tbl
+  test_1 = preprocess_test()
+  test_2 = preprocess_test(fb_ = "filter_target_select")
+  test_3 = preprocess_test(f_ = "gausscovf1")
+  test_4 = preprocess_test(f_ = "gausscovf1", p0_ = 0.01)
+  test_5 = preprocess_test(f_ = "gausscovf3", p0_ = 0.4)
 }
 
 # random forest graph

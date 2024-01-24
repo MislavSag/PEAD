@@ -10,7 +10,7 @@ FilterGausscovF1st = R6::R6Class(
         p0   = p_dbl(lower = 0, upper = 1, default = 0.01),
         kmn  = p_int(lower = 0, default = 0),
         kmx  = p_int(lower = 0, default = 0),
-        mx   = p_int(lower = 1, default = 21),
+        mx   = p_int(lower = 1, default = 35),
         kex  = p_int(lower = 0, default = 0),
         sub  = p_lgl(default = TRUE),
         inr  = p_lgl(default = TRUE),
