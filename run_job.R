@@ -129,7 +129,6 @@ if (interactive()) {
 # extract integer
 i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
 cat("ID is ", i, "\n")
-# i = 3L
 
 # extract not done ids
 ids_not_done = findNotDone(reg=reg)
