@@ -385,8 +385,8 @@ mlr_measures$add("portfolio_ret", PortfolioRet)
 # graph templates
 gr = gunion(list(
   po("nop", id = "nop_union_pca"),
-  po("pca", center = FALSE, rank. = 50),
-  po("ica", n.comp = 10) # Error in fastICA::fastICA(as.matrix(dt), n.comp = 10L, method = "C") : data must be matrix-conformal This happened PipeOp ica's $train()
+  po("pca", center = FALSE, rank. = 50)
+  # po("ica", n.comp = 10) # Error in fastICA::fastICA(as.matrix(dt), n.comp = 10L, method = "C") : data must be matrix-conformal This happened PipeOp ica's $train()
 )) %>>% po("featureunion")
 filter_target_gr = po("branch",
                       options = c("nop_filter_target", "filter_target_select"),
