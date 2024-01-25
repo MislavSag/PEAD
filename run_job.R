@@ -119,6 +119,9 @@ UpdateBuffer = R6Class(
 
 
 # RUN JOB -----------------------------------------------------------------
+# set debugger
+lgr::get_logger("mlr3")$set_threshold("debug")
+
 # load registry
 if (interactive()) {
   reg = loadRegistry("experiments_test")
