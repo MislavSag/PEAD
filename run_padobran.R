@@ -387,7 +387,7 @@ gr = gunion(list(
   po("nop", id = "nop_union_pca"),
   po("pca", center = FALSE, rank. = 50)
   # po("ica", n.comp = 10) # Error in fastICA::fastICA(as.matrix(dt), n.comp = 10L, method = "C") : data must be matrix-conformal This happened PipeOp ica's $train()
-)) %>>% po("featureunion")
+)) %>>% po("featureunion", id = "feature_union_pca")
 filter_target_gr = po("branch",
                       options = c("nop_filter_target", "filter_target_select"),
                       id = "filter_target_branch") %>>%
@@ -396,6 +396,25 @@ filter_target_gr = po("branch",
     po("filter_target", id = "filter_target_id")
     )) %>>%
   po("unbranch", id = "filter_target_unbranch")
+# create mlr3 graph that takes 3 filters and union predictors from them
+filters_ = list(
+  po("filter", flt("disr"), filter.nfeat = 5),
+  po("filter", flt("jmim"), filter.nfeat = 5),
+  po("filter", flt("jmi"), filter.nfeat = 5),
+  po("filter", flt("mim"), filter.nfeat = 5),
+  po("filter", flt("mrmr"), filter.nfeat = 5),
+  po("filter", flt("njmim"), filter.nfeat = 5),
+  po("filter", flt("cmim"), filter.nfeat = 5),
+  po("filter", flt("carscore"), filter.nfeat = 5),
+  po("filter", flt("information_gain"), filter.nfeat = 5),
+  # po("filter", filter = flt("relief"), filter.nfeat = 5),
+  po("filter", filter = flt("gausscov_f3st"), p0 = 0.25, m = 2, filter.cutoff = 0)
+  # po("filter", mlr3filters::flt("importance", learner = mlr3::lrn("classif.rpart")), filter.nfeat = 10, id = "importance_1"),
+  # po("filter", mlr3filters::flt("importance", learner = lrn), filter.nfeat = 10, id = "importance_2")
+)
+graph_filters = gunion(filters_) %>>%
+  po("featureunion", length(filters_), id = "feature_union_filters")
+
 graph_template =
   filter_target_gr %>>%
   po("subsample") %>>% # uncomment this for hyperparameter tuning
@@ -418,13 +437,17 @@ graph_template =
   # add pca columns
   gr %>>%
   # filters
-  po("branch", options = c("jmi", "gausscovf1", "gausscovf3"), id = "filter_branch") %>>%
-  gunion(list(po("filter", filter = flt("jmi"), filter.nfeat = 25),
-              # po("filter", filter = flt("relief"), filter.nfeat = 25),
-              po("filter", filter = flt("gausscov_f1st"), p0 = 0.01, kmn=5, filter.cutoff = 0),
-              po("filter", filter = flt("gausscov_f3st"), p0 = 0.01, kmn=5, m = 1, filter.cutoff = 0)
-  )) %>>%
-  po("unbranch", id = "filter_unbranch") %>>%
+  # OLD BARNCH WAY
+  # po("branch", options = c("jmi", "gausscovf1", "gausscovf3"), id = "filter_branch") %>>%
+  # gunion(list(po("filter", filter = flt("jmi"), filter.nfeat = 25),
+  #             # po("filter", filter = flt("relief"), filter.nfeat = 25),
+  #             po("filter", filter = flt("gausscov_f1st"), p0 = 0.2, kmn=10, filter.cutoff = 0),
+  #             po("filter", filter = flt("gausscov_f3st"), p0 = 0.2, kmn=10, m = 1, filter.cutoff = 0)
+  # )) %>>%
+  # po("unbranch", id = "filter_unbranch") %>>%
+  # OLD BARNCH WAY
+  # filters union
+  graph_filters %>>%
   # modelmatrix
   # po("branch", options = c("nop_interaction", "modelmatrix"), id = "interaction_branch") %>>%
   # gunion(list(
@@ -436,16 +459,16 @@ graph_template =
 # hyperparameters template
 as.data.table(graph_template$param_set)[1:100]
 plot(graph_template)
-gausscov_sp = as.character(seq(0.1, 0.8, by = 0.1))
+gausscov_sp = as.character(seq(0.2, 0.8, by = 0.1))
 winsorize_sp =  c(0.999, 0.99, 0.98, 0.97, 0.90, 0.8)
 search_space_template = ps(
   # filter target
   filter_target_branch.selection = p_fct(levels = c("nop_filter_target", "filter_target_select")),
-  filter_target_id.q = p_fct(levels = c("0.4", "0.3", "0.2", "0.1"),
+  filter_target_id.q = p_fct(levels = c("0.4", "0.3", "0.2"),
                              trafo = function(x, param_set) return(as.double(x)),
                              depends = filter_target_branch.selection == "filter_target_select"),
   # subsample for hyperband
-  subsample.frac = p_dbl(0.6, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.7, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
   dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
                           trafo = function(x, param_set) return(as.integer(x))),
@@ -454,18 +477,18 @@ search_space_template = ps(
   winsorizesimple.probs_low = p_fct(as.character(1-winsorize_sp),
                                     trafo = function(x, param_set) return(as.double(x))),
   # scaling
-  scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
+  scale_branch.selection = p_fct(levels = c("uniformization", "scale"))
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
-  jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
-                           trafo = function(x, param_set) return(as.integer(x)),
-                           depends = filter_branch.selection == "jmi"),
-  gausscov_f1st.p0 = p_fct(gausscov_sp,
-                           trafo = function(x, param_set) return(as.double(x)),
-                           depends = filter_branch.selection == "gausscovf1"),
-  gausscov_f3st.p0 = p_fct(gausscov_sp,
-                           trafo = function(x, param_set) return(as.double(x)),
-                           depends = filter_branch.selection == "gausscovf3")
+  # filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
+  # jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
+  #                          trafo = function(x, param_set) return(as.integer(x)),
+  #                          depends = filter_branch.selection == "jmi"),
+  # gausscov_f1st.p0 = p_fct(gausscov_sp,
+  #                          trafo = function(x, param_set) return(as.double(x)),
+  #                          depends = filter_branch.selection == "gausscovf1"),
+  # gausscov_f3st.p0 = p_fct(gausscov_sp,
+  #                          trafo = function(x, param_set) return(as.double(x)),
+  #                          depends = filter_branch.selection == "gausscovf3")
   # # interaction
   # interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix"))
 )
@@ -475,45 +498,31 @@ if (interactive()) {
   sp_grid = generate_design_grid(search_space_template, 1)
   sp_grid = sp_grid$data
   sp_grid
-  sp_grid[!is.na(dropcorr.cutoff)]
-  sp_grid[!is.na(gausscov_f3st.p0)]
-  sp_grid[!is.na(gausscov_f1st.p0)]
-  sp_grid[!is.na(gausscov_f3st.p0), unique(gausscov_f3st.p0)]
-  sp_grid[!is.na(gausscov_f1st.p0), unique(gausscov_f1st.p0)]
-  sp_grid[!is.na(jmi.filter.nfeat), unique(jmi.filter.nfeat)]
 
   # help graph for testing preprocessing
   preprocess_test = function(
-    fb_ = c("nop_filter_target", "filter_target_select"),
-    sc_ = c("uniformization", "scale"),
-    f_ = c("jmi", "gausscovf1", "gausscovf3"),
-    p0_ = 0.5
+    fb_ = c("nop_filter_target", "filter_target_select")
     ) {
     fb_ = match.arg(fb_) # fb_ = "nop_filter_target"
-    sc_ = match.arg(sc_) # sc_ = "uniformization"
-    f_ = match.arg(f_)   # f_ = "gausscovf3"
     task_ = task_ret_week$clone()
     nr = task_$nrow
-    task_$filter((nr-20000):nr)
+    rows_ = (nr-10000):nr
+    task_$filter(rows_)
+    dates = task_$backend$data(rows_, "date")
+    print(dates[, min(date)])
+    print(dates[, max(date)])
     gr_test = graph_template$clone()
     gr_test$param_set$values$filter_target_branch.selection = fb_
-    # gr_test$param_set$values$filter_target_id.q = 0.3
-    # gr_test$param_set$values$subsample.frac = 0.6
+    gr_test$param_set$values$filter_target_id.q = 0.3
+    gr_test$param_set$values$subsample.frac = 0.6
     # gr_test$param_set$values$dropcorr.cutoff = 0.99
     # gr_test$param_set$values$scale_branch.selection = sc_
-    gr_test$param_set$values$filter_branch.selection = f_
-    gr_test$param_set$values$gausscov_f1st.p0 = p0_
-    gr_test$param_set$values$gausscov_f3st.p0 = p0_
-    gr_test$param_set$values$jmi.filter.nfeat = 50
     return(gr_test$train(task_))
   }
 
   # test graph preprocesing
-  test_1 = preprocess_test()
-  test_2 = preprocess_test(fb_ = "filter_target_select")
-  test_3 = preprocess_test(f_ = "gausscovf1")
-  test_4 = preprocess_test(f_ = "gausscovf1", p0_ = 0.01)
-  test_5 = preprocess_test(f_ = "gausscovf3", p0_ = 0.4)
+  test_default = preprocess_test()
+  # test_2 = preprocess_test(fb_ = "filter_target_select")
 }
 
 # random forest graph
