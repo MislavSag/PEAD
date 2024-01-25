@@ -8,6 +8,7 @@ library(PerformanceAnalytics)
 library(AzureStor)
 library(future.apply)
 library(matrixStats)
+library(finautoml)
 
 
 # creds
@@ -120,10 +121,9 @@ if (test) {
 }
 
 # measures
-source("Linex.R")
 source("AdjLoss2.R")
 source("PortfolioRet.R")
-mlr_measures$add("linex", Linex)
+mlr_measures$add("linex", finautoml::Linex)
 mlr_measures$add("adjloss2", AdjLoss2)
 mlr_measures$add("portfolio_ret", PortfolioRet)
 
@@ -153,7 +153,7 @@ predictions_dt = na.omit(predictions)
 unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task")]
 unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task", "cv")]
 
-# accuracy by ids
+# classification measures across ids
 measures = function(t, res) {
   list(acc   = mlr3measures::acc(t, res),
        fbeta = mlr3measures::fbeta(t, res, positive = "1"),
@@ -208,18 +208,13 @@ calculate_measures = function(t, res) {
 dt[, calculate_measures(truth_sign, as.factor(sign(mean_resp))), by = task]
 dt[, calculate_measures(truth_sign, as.factor(sign(median_resp))), by = task]
 dt[, calculate_measures(truth_sign, as.factor(sign(sum_resp))), by = task]
-dt[, calculate_measures(truth_sign, as.factor(sign(max_resp + min_resp))), by = task]
-dt[, calculate_measures(truth_sign, as.factor(sign(q9_resp))), by = task]
-dt[, calculate_measures(truth_sign, as.factor(sign(max_resp))), by = task]
 
-dt[sd_resp > 2, calculate_measures(truth_sign, as.factor(sign(mean_resp))), by = task]
-dt[, calculate_measures(truth_sign, as.factor(sign(median_resp))), by = task]
-dt[, calculate_measures(truth_sign, as.factor(sign(sum_resp))), by = task]
 dt[, calculate_measures(truth_sign, as.factor(sign(max_resp + min_resp))), by = task]
 dt[, calculate_measures(truth_sign, as.factor(sign(q9_resp))), by = task]
 dt[, calculate_measures(truth_sign, as.factor(sign(max_resp))), by = task]
 
 
+dt[all_buy == TRUE]
 dt[all_buy == TRUE, calculate_measures(truth_sign, factor(ifelse(all_buy, 1, -1), levels = c(-1, 1)))]
 dt[all_sell == TRUE, calculate_measures(truth_sign, factor(ifelse(all_sell, -1, 1), levels = c(-1, 1)))]
 dt[all_sell == TRUE, calculate_measures(truth_sign, factor(ifelse(all_sell, -1, 1), levels = c(-1, 1)))]
@@ -232,7 +227,7 @@ dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 10, 1, -1), levels =
 dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 10, 1, -1), levels = c(-1, 1))), by = task]
 dt[, calculate_measures(truth_sign, factor(ifelse(sum_sell > 10, -1, 1), levels = c(-1, 1)))]
 
-# calculate what wuld be sum of truth if xgboost, ranger or rsm are greater than 0
+# calculate what would be sum of truth if xgboost, ranger or rsm are greater than 0
 cols = colnames(dt)
 cols = cols[which(cols == "bart"):which(cols == "sum_resp")]
 cols = c("task", cols)
@@ -243,124 +238,8 @@ melt(na.omit(dt[, ..cols]), id.vars = "task")[value > 0 & value < 2, sum(value),
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
 file_name_ =  paste0("pead_qc.csv")
 qc_data = unique(na.omit(dt), by = c("task", "symbol", "date"))
+qc_data[, .(min_date = min(date), max_date = max(date))]
 storage_write_csv(qc_data, cont, file_name_)
-
-lapply(unique(predictions_ensemble$task), function(x) {
-  # debug
-  # x = "taskRetWeek"
-
-  y = unique(y)
-
-  # remove where all false
-  # y = y[response_sign_sign_pos13 == TRUE]
-
-  # min and max date
-  y[, min(date)]
-  y[, max(date)]
-
-  # by date
-  # cols_ = setdiff(cols, "date")
-  # y = y[, lapply(.SD, function(x) paste0(x, collapse = "|")), by = date]
-  # y[, date := as.character(date)]
-  # setorder(y, date)
-
-  # y = y[, .(
-  #   symbol = paste0(symbol, collapse = "|"),
-  #   response = paste0(response, collapse = "|"),
-  #   epsdiff = paste0(epsDiff, collapse = "|"),
-  #
-  # ), by = date]
-
-  # order
-  setorder(y, date)
-
-  # save to azure blob
-  print(colnames(y))
-  file_name_ =  paste0("pead-", x, ".csv")
-  storage_write_csv(y, cont, file_name_)
-  # universe = y[, .(date, symbol)]
-  # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
-})
-
-
-# #  save to azure for QC backtest
-# cont = storage_container(BLOBENDPOINT, "qc-backtest")
-# lapply(unique(predictions_ensemble$task), function(x) {
-#   # debug
-#   # x = "taskRetWeek"
-#
-#   # prepare data
-#   # y = predictions_ensemble[median_response > 0 & sd_response < 0.15]
-#   # y = y[, response_sign_sign_pos16 := TRUE]
-#   y = predictions_ensemble[task == x]
-#   y = na.omit(y)
-#   cols = colnames(y)[grep("response_sign", colnames(y))]
-#   cols = c("symbol", "date", "epsDiff", "mean_response", "sd_response", cols)
-#   y = y[, ..cols]
-#   y = unique(y)
-#
-#   # remove where all false
-#   # y = y[response_sign_sign_pos13 == TRUE]
-#
-#   # min and max date
-#   y[, min(date)]
-#   y[, max(date)]
-#
-#   # by date
-#   # cols_ = setdiff(cols, "date")
-#   # y = y[, lapply(.SD, function(x) paste0(x, collapse = "|")), by = date]
-#   # y[, date := as.character(date)]
-#   # setorder(y, date)
-#
-#   # y = y[, .(
-#   #   symbol = paste0(symbol, collapse = "|"),
-#   #   response = paste0(response, collapse = "|"),
-#   #   epsdiff = paste0(epsDiff, collapse = "|"),
-#   #
-#   # ), by = date]
-#
-#   # order
-#   setorder(y, date)
-#
-#   # save to azure blob
-#   print(colnames(y))
-#   file_name_ =  paste0("pead-", x, ".csv")
-#   storage_write_csv(y, cont, file_name_)
-#   # universe = y[, .(date, symbol)]
-#   # storage_write_csv(universe, cont, "pead_task_ret_week_universe.csv", col_names = FALSE)
-# })
-#
-# # save to azure specific model for QC backtest
-# cont = storage_container(BLOBENDPOINT, "qc-backtest")
-# model_choose = "rsm"
-# lapply(unique(predictions$task), function(x) {
-#   # debug
-#   # x = "taskRetWeek"
-#
-#   # prepare data
-#   y = predictions[task == x & learner == model_choose]
-#   y = na.omit(y)
-#   cols = c("symbol", "date", "epsDiff", "response")
-#   y = y[, ..cols]
-#   y = unique(y)
-#
-#   # order
-#   setorder(y, date)
-#
-#   #
-#   y[, `:=`(
-#     response_sign_mean = response,
-#     response_sign_sign_pos1 = response > 0,
-#     response_sign_sign_neg1 = response < 0,
-#     mean_response = response,
-#     sd_response = 1
-#   )]
-#
-#
-#   # save to azure blob
-#   file_name_ =  paste0("pead-", x, "-", model_choose, ".csv")
-#   storage_write_csv(y, cont, file_name_)
-# })
 
 
 # SYSTEMIC RISK -----------------------------------------------------------
@@ -368,7 +247,7 @@ lapply(unique(predictions_ensemble$task), function(x) {
 con <- dbConnect(duckdb::duckdb())
 query <- sprintf("
     SELECT *
-    FROM 'F:/lean_root/data/all_stocks_daily.csv'
+    FROM 'F:/lean/data/stocks_daily.csv'
     WHERE Symbol = 'spy'
 ")
 spy <- dbGetQuery(con, query)
@@ -380,39 +259,34 @@ spy = na.omit(spy)
 plot(spy[, close])
 
 # systemic risk
-task_ = "taskRetWeek"
-sample_ = predictions_ensemble[task == task_]
-sample_ = na.omit(sample_)
-sample_ = unique(sample_)
-setorder(sample_, date)
-pos_cols = colnames(sample_)[grep("pos", colnames(sample_))]
-neg_cols = colnames(sample_)[grep("neg", colnames(sample_))]
-new_dt = sample_[, ..pos_cols] - sample_[, ..neg_cols]
-setnames(new_dt, gsub("pos", "net", pos_cols))
-sample_ = cbind(sample_, new_dt)
-sample_[, max(date)]
-sample_ = sample_[date < sample_[, max(date)]]
-sample_ = sample_[date > sample_[, min(date)]]
-plot(as.xts.data.table(sample_[, .N, by = date]))
-
-# calculate indicator
-indicator = sample_[, .(ind = median(median_response),
-                        ind_sd = sd(sd_response)), by = "date"]
+task_ = "taskRetMonth"
+indicator = dt[task == task_, .(indicator = mean(mean_resp, na.rm = TRUE),
+                                indicator_sd = sd(mean_resp, na.rm = TRUE),
+                                indicator_q1 = quantile(mean_resp, probs = 0.01, na.rm = TRUE)),
+               by = date][order(date)]
+cols = colnames(indicator)[2:ncol(indicator)]
+indicator[, (cols) := lapply(.SD, nafill, type = "locf"), .SDcols = cols]
+indicator[, `:=`(
+  indicator_ema = TTR::EMA(indicator, 5, na.rm = TRUE),
+  indicator_sd_ema = TTR::EMA(indicator_sd, 5, na.rm = TRUE),
+  indicator_q1_ema = TTR::EMA(indicator_q1, 5, na.rm = TRUE)
+)]
 indicator = na.omit(indicator)
-indicator[, ind_ema := TTR::EMA(ind, 2, na.rm = TRUE)]
-indicator[, ind_sd_ema := TTR::EMA(ind_sd, 2, na.rm = TRUE)]
-indicator = na.omit(indicator)
-plot(as.xts.data.table(indicator)[, 1])
-plot(as.xts.data.table(indicator)[, 2])
-plot(as.xts.data.table(indicator)[, 3])
+plot(as.xts.data.table(indicator)[, 4])
+plot(as.xts.data.table(indicator)[, 5])
+plot(as.xts.data.table(indicator)[, 6])
 
 # create backtest data
 backtest_data =  merge(spy, indicator, by = "date", all.x = TRUE, all.y = FALSE)
-backtest_data = backtest_data[date > indicator[, min(date)]]
-backtest_data = backtest_data[date < indicator[, max(date)]]
+min_date = indicator[, min(date)]
+backtest_data = backtest_data[date > min_date]
+max_date = indicator[, max(date)]
+backtest_data = backtest_data[date < max_date]
+cols = colnames(backtest_data)[4:ncol(backtest_data)]
+backtest_data[, (cols) := lapply(.SD, nafill, type = "locf"), .SDcols = cols]
 backtest_data[, signal := 1]
-backtest_data[shift(ind) < 0, signal := 0]          # 1
-# backtest_data[shift(diff(mean_response_agg_ema, 5)) < -0.01, signal := 0] # 2
+backtest_data[shift(indicator_ema) < 0, signal := 0]
+# backtest_data[shift(indicator_sd_ema) < 4, signal := 0]
 backtest_data_xts = as.xts.data.table(backtest_data[, .(date, benchmark = returns, strategy = ifelse(signal == 0, 0, returns * signal * 1))])
 charts.PerformanceSummary(backtest_data_xts)
 # backtest performance
