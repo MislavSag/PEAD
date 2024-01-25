@@ -40,7 +40,11 @@ From: r-base:4.3.0
   R --slave -e 'install.packages("partykit")'
   R --slave -e 'install.packages("sandwich")'
   R --slave -e 'install.packages("coin")'
+  # filters
   R --slave -e 'install.packages("praznik")'
+  R --slave -e 'install.packages("FSelectorRcpp")'
+  R --slave -e 'install.packages("care")'
+
   R --slave -e 'install.packages("fastICA")'
   R --slave -e 'install.packages("lightgbm")'
   R --slave -e 'install.packages("earth")'
