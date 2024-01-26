@@ -434,7 +434,7 @@ graph_template =
               po("scale")
   )) %>>%
   po("unbranch", id = "scale_unbranch") %>>%
-  po("mydropna", id = "dropna_v2") %>>%
+  po("dropna", id = "dropna_v2") %>>%
   # add pca columns
   gr %>>%
   # filters
