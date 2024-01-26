@@ -1,8 +1,3 @@
-library(mlr3pipelines)
-library(mlr3verse)
-library(mlr3misc)
-library(R6)
-
 PipeOpDropNA = R6::R6Class(
   "PipeOpDropNA",
   inherit = mlr3pipelines::PipeOpTaskPreproc,

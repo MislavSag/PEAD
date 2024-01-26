@@ -385,7 +385,8 @@ mlr_measures$add("portfolio_ret", PortfolioRet)
 # graph templates
 gr = gunion(list(
   po("nop", id = "nop_union_pca"),
-  po("pca", center = FALSE, rank. = 50)
+  po("pca", center = FALSE, rank. = 50),
+  po("ica", n.comp = 10)
   # po("ica", n.comp = 10) # Error in fastICA::fastICA(as.matrix(dt), n.comp = 10L, method = "C") : data must be matrix-conformal This happened PipeOp ica's $train()
 )) %>>% po("featureunion", id = "feature_union_pca")
 filter_target_gr = po("branch",
@@ -405,10 +406,10 @@ filters_ = list(
   po("filter", flt("mrmr"), filter.nfeat = 5),
   po("filter", flt("njmim"), filter.nfeat = 5),
   po("filter", flt("cmim"), filter.nfeat = 5),
-  po("filter", flt("carscore"), filter.nfeat = 5),
+  po("filter", flt("carscore"), filter.nfeat = 5), # UNCOMMENT LATER< SLOWER SO COMMENTED FOR DEVELOPING
   po("filter", flt("information_gain"), filter.nfeat = 5),
   # po("filter", filter = flt("relief"), filter.nfeat = 5),
-  po("filter", filter = flt("gausscov_f3st"), p0 = 0.25, m = 2, filter.cutoff = 0)
+  po("filter", filter = flt("gausscov_f1st"), p0 = 0.25, filter.cutoff = 0)
   # po("filter", mlr3filters::flt("importance", learner = mlr3::lrn("classif.rpart")), filter.nfeat = 10, id = "importance_1"),
   # po("filter", mlr3filters::flt("importance", learner = lrn), filter.nfeat = 10, id = "importance_2")
 )
@@ -433,7 +434,7 @@ graph_template =
               po("scale")
   )) %>>%
   po("unbranch", id = "scale_unbranch") %>>%
-  po("dropna", id = "dropna_v2") %>>%
+  po("mydropna", id = "dropna_v2") %>>%
   # add pca columns
   gr %>>%
   # filters
@@ -471,7 +472,7 @@ search_space_template = ps(
   subsample.frac = p_dbl(0.7, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
   dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
-                          trafo = function(x, param_set) return(as.integer(x))),
+                          trafo = function(x, param_set) return(as.double(x))),
   winsorizesimple.probs_high = p_fct(as.character(winsorize_sp),
                                      trafo = function(x, param_set) return(as.double(x))),
   winsorizesimple.probs_low = p_fct(as.character(1-winsorize_sp),
@@ -493,37 +494,41 @@ search_space_template = ps(
   # interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix"))
 )
 
-if (interactive()) {
-  # show all combinations from search space, like in grid
-  sp_grid = generate_design_grid(search_space_template, 1)
-  sp_grid = sp_grid$data
-  sp_grid
-
-  # help graph for testing preprocessing
-  preprocess_test = function(
-    fb_ = c("nop_filter_target", "filter_target_select")
-    ) {
-    fb_ = match.arg(fb_) # fb_ = "nop_filter_target"
-    task_ = task_ret_week$clone()
-    nr = task_$nrow
-    rows_ = (nr-10000):nr
-    task_$filter(rows_)
-    dates = task_$backend$data(rows_, "date")
-    print(dates[, min(date)])
-    print(dates[, max(date)])
-    gr_test = graph_template$clone()
-    gr_test$param_set$values$filter_target_branch.selection = fb_
-    gr_test$param_set$values$filter_target_id.q = 0.3
-    gr_test$param_set$values$subsample.frac = 0.6
-    # gr_test$param_set$values$dropcorr.cutoff = 0.99
-    # gr_test$param_set$values$scale_branch.selection = sc_
-    return(gr_test$train(task_))
-  }
-
-  # test graph preprocesing
-  test_default = preprocess_test()
-  # test_2 = preprocess_test(fb_ = "filter_target_select")
-}
+# if (interactive()) {
+#   # show all combinations from search space, like in grid
+#   sp_grid = generate_design_grid(search_space_template, 1)
+#   sp_grid = sp_grid$data
+#   sp_grid
+#
+#   # check ids of nth cv sets
+#   train_ids = custom_cvs[[1]]$inner$instance$train[[1]]
+#
+#   # help graph for testing preprocessing
+#   preprocess_test = function(
+#     fb_ = c("nop_filter_target", "filter_target_select")
+#     ) {
+#     fb_ = match.arg(fb_) # fb_ = "nop_filter_target"
+#     task_ = task_ret_week$clone()
+#     # nr = task_$nrow
+#     # rows_ = (nr-10000):nr
+#     # task_$filter(rows_)
+#     task_$filter(train_ids)
+#     # dates = task_$backend$data(rows_, "date")
+#     # print(dates[, min(date)])
+#     # print(dates[, max(date)])
+#     gr_test = graph_template$clone()
+#     # gr_test$param_set$values$filter_target_branch.selection = fb_
+#     # gr_test$param_set$values$filter_target_id.q = 0.3
+#     # gr_test$param_set$values$subsample.frac = 0.6
+#     # gr_test$param_set$values$dropcorr.cutoff = 0.99
+#     # gr_test$param_set$values$scale_branch.selection = sc_
+#     return(gr_test$train(task_))
+#   }
+#
+#   # test graph preprocesing
+#   test_default = preprocess_test()
+#   # test_2 = preprocess_test(fb_ = "filter_target_select")
+# }
 
 # random forest graph
 graph_rf = graph_template %>>%
@@ -548,10 +553,11 @@ as.data.table(graph_xgboost$param_set)[grep("depth", id), .(id, class, lower, up
 search_space_xgboost = ps(
   # filter target
   filter_target_branch.selection = p_fct(levels = c("nop_filter_target", "filter_target_select")),
-  filter_target_id.q = p_fct(levels = c(0.4, 0.3, 0.2, 0.1),
+  filter_target_id.q = p_fct(levels = c("0.4", "0.3", "0.2"),
+                             trafo = function(x, param_set) return(as.double(x)),
                              depends = filter_target_branch.selection == "filter_target_select"),
   # subsample for hyperband
-  subsample.frac = p_dbl(0.6, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.7, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
   dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
                           trafo = function(x, param_set) return(as.integer(x))),
@@ -562,12 +568,6 @@ search_space_xgboost = ps(
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
-  gausscov_f1st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
-  gausscov_f3st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
-  jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
-                           trafo = function(x, param_set) return(as.integer(x))),
-
   # learner
   regr.xgboost.alpha     = p_dbl(0.001, 100, logscale = TRUE),
   regr.xgboost.max_depth = p_int(1, 20),
@@ -642,10 +642,11 @@ as.data.table(graph_kknn$param_set)[, .(id, class, lower, upper, levels)]
 search_space_kknn = ps(
   # filter target
   filter_target_branch.selection = p_fct(levels = c("nop_filter_target", "filter_target_select")),
-  filter_target_id.q = p_fct(levels = c(0.4, 0.3, 0.2, 0.1),
+  filter_target_id.q = p_fct(levels = c("0.4", "0.3", "0.2"),
+                             trafo = function(x, param_set) return(as.double(x)),
                              depends = filter_target_branch.selection == "filter_target_select"),
   # subsample for hyperband
-  subsample.frac = p_dbl(0.6, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.7, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
   dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
                           trafo = function(x, param_set) return(as.integer(x))),
@@ -655,12 +656,7 @@ search_space_kknn = ps(
                                     trafo = function(x, param_set) return(as.double(x))),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
-  # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
-  gausscov_f1st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
-  gausscov_f3st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
-  jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
-                           trafo = function(x, param_set) return(as.integer(x))),
+  # filters,
   # learner
   regr.kknn.k        = p_int(lower = 1, upper = 50, logscale = TRUE),
   regr.kknn.distance = p_dbl(lower = 1, upper = 5),
@@ -689,10 +685,11 @@ as.data.table(graph_glmnet$param_set)[, .(id, class, lower, upper, levels)]
 search_space_glmnet = ps(
   # filter target
   filter_target_branch.selection = p_fct(levels = c("nop_filter_target", "filter_target_select")),
-  filter_target_id.q = p_fct(levels = c(0.4, 0.3, 0.2, 0.1),
+  filter_target_id.q = p_fct(levels = c("0.4", "0.3", "0.2"),
+                             trafo = function(x, param_set) return(as.double(x)),
                              depends = filter_target_branch.selection == "filter_target_select"),
   # subsample for hyperband
-  subsample.frac = p_dbl(0.6, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
+  subsample.frac = p_dbl(0.7, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
   dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
                           trafo = function(x, param_set) return(as.integer(x))),
@@ -703,11 +700,6 @@ search_space_glmnet = ps(
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale")),
   # filters
-  filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
-  gausscov_f1st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
-  gausscov_f3st.p0 = p_fct(gausscov_sp, trafo = function(x, param_set) return(as.double(x))),
-  jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
-                           trafo = function(x, param_set) return(as.integer(x))),
   # learner
   regr.glmnet.s     = p_int(lower = 5, upper = 30),
   regr.glmnet.alpha = p_dbl(lower = 1e-4, upper = 1, logscale = TRUE)
@@ -1074,12 +1066,12 @@ sh_file = sprintf("
 #PBS -l ncpus=4
 #PBS -l mem=8GB
 #PBS -J 1-%d
-#PBS -o experiments/logs
+#PBS -o %s/logs
 #PBS -j oe
 
 cd ${PBS_O_WORKDIR}
 apptainer run image.sif run_job.R 0
-", nrow(designs))
+", tail(reg$defs[, def.id], 1), dirname_)
 sh_file_name = "run_month.sh"
 file.create(sh_file_name)
 writeLines(sh_file, sh_file_name)

@@ -20,18 +20,22 @@ library(brew)
 
 
 # COMMAND LINE ARGUMENTS --------------------------------------------------
-# Import command line arguments
-args = commandArgs(trailingOnly = TRUE)
+if (interactive()) {
+  residue = FALSE
+} else {
+  # Import command line arguments
+  args = commandArgs(trailingOnly = TRUE)
 
-# Ensure there are enough arguments
-if(length(args) < 1) {
-  stop("Not enough arguments. Please provide id_1 and id_2.")
+  # Ensure there are enough arguments
+  if (length(args) < 1) {
+    stop("Not enough arguments. Please provide id_1 and id_2.")
+  }
+
+  # Assign the arguments to variables
+  cat(args, sep = "\n")
+  residue = as.logical(as.integer(args[1]))
+  cat("Argument 1 is ", residue)
 }
-
-# Assign the arguments to variables
-cat(args, sep = "\n")
-residue = as.logical(as.integer(args[1]))
-cat("Argument 1 is ", residue)
 
 
 # UTILS -------------------------------------------------------------------
@@ -130,7 +134,11 @@ if (interactive()) {
 }
 
 # extract integer
-i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
+if (interactive()) {
+  i = 1
+} else {
+  i = as.integer(Sys.getenv('PBS_ARRAY_INDEX'))
+}
 cat("ID is ", i, "\n")
 
 # extract not done ids

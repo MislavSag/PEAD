@@ -1,9 +1,3 @@
-library(mlr3pipelines)
-library(mlr3verse)
-library(mlr3misc)
-library(R6)
-library(paradox)
-
 PipeOpWinsorizeSimple = R6::R6Class(
   "PipeOpWinsorizeSimple",
   inherit = mlr3pipelines::PipeOpTaskPreprocSimple,
