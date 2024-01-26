@@ -1071,7 +1071,7 @@ sh_file = sprintf("
 
 cd ${PBS_O_WORKDIR}
 apptainer run image.sif run_job.R 0
-", tail(reg$defs[, def.id], 1), dirname_)
+", nrow(designs), dirname_)
 sh_file_name = "run_month.sh"
 file.create(sh_file_name)
 writeLines(sh_file, sh_file_name)
