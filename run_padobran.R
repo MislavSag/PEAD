@@ -479,19 +479,6 @@ search_space_template = ps(
                                     trafo = function(x, param_set) return(as.double(x))),
   # scaling
   scale_branch.selection = p_fct(levels = c("uniformization", "scale"))
-  # filters
-  # filter_branch.selection = p_fct(levels = c("jmi", "gausscovf3", "gausscovf1")),
-  # jmi.filter.nfeat = p_fct(c("25", "50", "75", "100"),
-  #                          trafo = function(x, param_set) return(as.integer(x)),
-  #                          depends = filter_branch.selection == "jmi"),
-  # gausscov_f1st.p0 = p_fct(gausscov_sp,
-  #                          trafo = function(x, param_set) return(as.double(x)),
-  #                          depends = filter_branch.selection == "gausscovf1"),
-  # gausscov_f3st.p0 = p_fct(gausscov_sp,
-  #                          trafo = function(x, param_set) return(as.double(x)),
-  #                          depends = filter_branch.selection == "gausscovf3")
-  # # interaction
-  # interaction_branch.selection = p_fct(levels = c("nop_interaction", "modelmatrix"))
 )
 
 # if (interactive()) {
@@ -560,7 +547,7 @@ search_space_xgboost = ps(
   subsample.frac = p_dbl(0.7, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
   dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
-                          trafo = function(x, param_set) return(as.integer(x))),
+                          trafo = function(x, param_set) return(as.double(x))),
   winsorizesimple.probs_high = p_fct(as.character(winsorize_sp),
                                      trafo = function(x, param_set) return(as.double(x))),
   winsorizesimple.probs_low = p_fct(as.character(1-winsorize_sp),
@@ -649,7 +636,7 @@ search_space_kknn = ps(
   subsample.frac = p_dbl(0.7, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
   dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
-                          trafo = function(x, param_set) return(as.integer(x))),
+                          trafo = function(x, param_set) return(as.double(x))),
   winsorizesimple.probs_high = p_fct(as.character(winsorize_sp),
                                      trafo = function(x, param_set) return(as.double(x))),
   winsorizesimple.probs_low = p_fct(as.character(1-winsorize_sp),
@@ -692,7 +679,7 @@ search_space_glmnet = ps(
   subsample.frac = p_dbl(0.7, 1, tags = "budget"), # commencement this if we want to use hyperband optimization
   # preprocessing
   dropcorr.cutoff = p_fct(c("0.80", "0.90", "0.95", "0.99"),
-                          trafo = function(x, param_set) return(as.integer(x))),
+                          trafo = function(x, param_set) return(as.double(x))),
   winsorizesimple.probs_high = p_fct(as.character(winsorize_sp),
                                      trafo = function(x, param_set) return(as.double(x))),
   winsorizesimple.probs_low = p_fct(as.character(1-winsorize_sp),
