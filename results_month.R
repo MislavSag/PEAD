@@ -85,10 +85,6 @@ predictions = rbindlist(predictions)
 predictions = merge(predictions_meta, predictions, by = "id")
 predictions = as.data.table(predictions)
 
-######## TEMP ###########
-predictions = predictions[!(task == 'taskRetMonth' & cv == 67)]
-######## TEMP ###########
-
 # import tasks
 tasks_files = dir_ls(fs::path(PATH, "problems"))
 tasks = lapply(tasks_files, readRDS)
@@ -97,13 +93,15 @@ tasks
 
 # backends
 get_backend = function(task_name = "taskRetWeek") {
+  # task_name = "taskRetWeek"
   task_ = tasks[names(tasks) == task_name][[1]]
   task_ = task_$data$backend
+  task_$data(rows = task_$rownames, cols = id_cols)
   task_ = task_$data(rows = task_$rownames, cols = id_cols)
   return(task_)
 }
 id_cols = c("symbol", "date", "yearmonthid", "..row_id", "epsDiff", "nincr",
-            "nincr2y", "nincr3y")
+            "nincr2y", "nincr3y", paste0("ret_", c("5", "22", "44", "66")))
 taskRetWeek    = get_backend()
 taskRetMonth   = get_backend("taskRetMonth")
 taskRetMonth2  = get_backend("taskRetMonth2")
@@ -173,7 +171,8 @@ predictions_dt[, truth_sign := as.factor(sign(truth))]
 # prediction to wide format
 dt = dcast(
   predictions_dt,
-  task + symbol + date + epsDiff + nincr + nincr2y + nincr3y + truth + truth_sign ~ learner,
+  task + symbol + date + epsDiff + nincr + nincr2y + nincr3y + truth +
+    truth_sign + ret_5 + ret_22 + ret_44 + ret_66 ~ learner,
   value.var = "response"
 )
 
@@ -213,7 +212,6 @@ dt[, calculate_measures(truth_sign, as.factor(sign(max_resp + min_resp))), by = 
 dt[, calculate_measures(truth_sign, as.factor(sign(q9_resp))), by = task]
 dt[, calculate_measures(truth_sign, as.factor(sign(max_resp))), by = task]
 
-
 dt[all_buy == TRUE]
 dt[all_buy == TRUE, calculate_measures(truth_sign, factor(ifelse(all_buy, 1, -1), levels = c(-1, 1)))]
 dt[all_sell == TRUE, calculate_measures(truth_sign, factor(ifelse(all_sell, -1, 1), levels = c(-1, 1)))]
@@ -227,7 +225,7 @@ dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 10, 1, -1), levels =
 dt[, calculate_measures(truth_sign, factor(ifelse(sum_buy > 10, 1, -1), levels = c(-1, 1))), by = task]
 dt[, calculate_measures(truth_sign, factor(ifelse(sum_sell > 10, -1, 1), levels = c(-1, 1)))]
 
-# calculate what would be sum of truth if xgboost, ranger or rsm are greater than 0
+# performance by returns
 cols = colnames(dt)
 cols = cols[which(cols == "bart"):which(cols == "sum_resp")]
 cols = c("task", cols)
