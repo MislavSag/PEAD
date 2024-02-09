@@ -1,0 +1,264 @@
+---
+title: "FinML Results"
+format: html
+execute:
+  echo: false
+  warning: false
+editor: visual
+---
+
+```{r}
+# Parameters
+# TODO: parametrize the script
+PATH = "F:/H4"
+TYPE = "predictions" # can be predictions and models
+IDCOLS = c("symbol", "date", "epsDiff", "nincr", "nincr2y", "nincr3y", "retFuture5", "retFuture22", "retFuture44", "retFuture66")
+
+# Libraries
+library(batchtools)
+library(kableExtra)
+library(fs)
+library(matrixStats)
+library(DT)
+library(PerformanceAnalytics)
+library(AzureStor)
+
+# creds
+blob_key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJLu1wVE6HT+ASt0DdAPQ=="
+endpoint = "https://snpmarketdata.blob.core.windows.net/"
+BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
+```
+
+```{r}
+# utils
+DT_template = function(df, pl=15) {
+  numeric_cols <- sapply(df, is.numeric)
+  datatable(df,
+            rownames = FALSE,
+            escape = FALSE,
+            extensions = 'Buttons',
+            options = list(dom = 'Blfrtip', 
+                           pageLength = pl,
+                           buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                           lengthMenu = list(c(10,25,50,-1), c(10,25,50,"All"))))
+} %>% formatPercentage(columns = which(numeric_cols), digits = 2)
+
+format_time = function(datetime) format.POSIXct(datetime, "%H:%M:%S %d-%m-%Y")
+```
+
+```{r}
+# Load registry
+reg = loadRegistry(PATH, work.dir=PATH)
+
+# Done ids
+ids = findDone(reg=reg)
+```
+
+### Summarize Jobs
+
+```{r}
+status_summarize = reg$status[, .(`Total Jobs`=.N, 
+                                  `Done Jobs` = nrow(ids),
+                                  `Nondone Jobs` = nrow(findNotDone(reg=reg)))]
+status_summarize = melt(status_summarize)
+```
+
+```{r}
+kbl(status_summarize, format="html", col.names=NULL) %>% 
+  kable_paper(full_width=FALSE)
+```
+
+```{r}
+# import tasks
+tasks_files = dir_ls(fs::path(PATH, "problems"))
+tasks = lapply(tasks_files, readRDS)
+names(tasks) = lapply(tasks, function(t) t$data$id)
+
+# add backend to predictions
+backend_l = lapply(tasks, function(tsk_) {
+  # tsk_ = tasks[[1]]
+  id_cols = setdiff(IDCOLS, c(tsk_$data$feature_names, tsk_$data$target_names))
+  x = tsk_$data$backend$data(1:tsk_$data$nrow, c(IDCOLS, "..row_id"))
+  setnames(x, "..row_id", "row_ids")
+  x = cbind(task = tsk_$data$id, x)
+  x
+})
+backends = rbindlist(backend_l, fill = TRUE)
+backends = unique(backends)
+```
+
+```{r}
+# Get metadata for done jobs
+tabs = getJobTable(ids, reg = reg)
+tabs = tabs[, .SD, .SDcols = c("job.id", "job.name", "repl", "prob.pars", "algo.pars")]
+predictions_meta = cbind.data.frame(
+  id = tabs[, job.id],
+  task = vapply(tabs$prob.pars, `[[`, character(1L), "task_id"),
+  learner = gsub(".*regr.|.tuned", "", vapply(tabs$algo.pars, `[[`, character(1L), "learner_id")),
+  cv = gsub("custom_|_.*", "", vapply(tabs$prob.pars, `[[`, character(1L), "resampling_id")),
+  fold = gsub("custom_\\d+_", "", vapply(tabs$prob.pars, `[[`, character(1L), "resampling_id"))
+)
+```
+
+```{r}
+#| cache: true
+
+predictions_l = lapply(ids[[1]], function(id_) {
+  # id_ = 1
+  x = tryCatch({readRDS(fs::path(PATH, "results", id_, ext = "rds"))},
+               error = function(e) NULL)
+  if (is.null(x)) {
+    print(id_)
+    return(NULL)
+  }
+  x = x$prediction
+  x["id"] = id_
+  x
+})
+```
+
+```{r}
+predictions = lapply(predictions_l, function(x) {
+  # x = predictions_l[[1]]
+  cbind.data.frame(
+    id = x$id,
+    row_ids = x$test$row_ids,
+    truth = x$test$truth,
+    response = x$test$response
+  )
+})
+predictions = rbindlist(predictions)
+predictions = merge(predictions_meta, predictions, by = "id")
+predictions = as.data.table(predictions)
+```
+
+```{r}
+# merge predictions and backends
+predictions = backends[predictions, on = c("task", "row_ids")]
+
+# change month to date from Posixct
+predictions[, date := as.Date(date)]
+```
+
+```{r}
+# clean predictions
+by_ = c("row_ids", "date", "task", "learner", "cv")
+preds = unique(predictions, by = by_)
+
+# keep only simple returns that corespond to horizont
+# THIS CODE IS HARD TO GENERALIZE
+preds[, ret_response := fcase(
+  gsub("[^0-9+]", "", task) == 5, retFuture5,
+  gsub("[^0-9+]", "", task) == 22, retFuture22,
+  gsub("[^0-9+]", "", task) == 44, retFuture44,
+  gsub("[^0-9+]", "", task) == 66, retFuture66
+)]
+
+```
+
+### NUMBER OF PREDICTIONS BY TASK
+
+```{r}
+# number of predictions by task
+kbl(preds[, .N, by = (Task = task)], format="html") %>% 
+  kable_paper(full_width=FALSE)
+```
+
+### NUMBER OF PREDICTIONS BY TASK AND CV
+
+```{r}
+# number of predictions by task and cv
+kbl(preds[, .N, by = .(Task = task, CV = cv)], format="html") %>% 
+  kable_paper(full_width=FALSE)
+```
+
+```{r}
+# prediction to wide format
+predsw = dcast(
+  preds,
+  task + cv + date + symbol + ret_response + epsDiff + nincr + nincr2y + nincr3y + truth ~ learner,
+  value.var = "response"
+)
+```
+
+```{r}
+# ensambles
+cols = colnames(predsw)
+cols = cols[(which(cols == "truth")+1):ncol(predsw)]
+p = predsw[, ..cols]
+pm = as.matrix(p)
+predsw = cbind(predsw, mean_resp = rowMeans(p, na.rm = TRUE))
+predsw = cbind(predsw, median_resp = rowMedians(pm, na.rm = TRUE))
+predsw = cbind(predsw, sum_resp = rowSums2(pm, na.rm = TRUE))
+predsw = cbind(predsw, iqrs_resp = rowIQRs(pm, na.rm = TRUE))
+predsw = cbind(predsw, sd_resp = rowMads(pm, na.rm = TRUE))
+predsw = cbind(predsw, q9_resp = rowQuantiles(pm, probs = 0.9, na.rm = TRUE))
+predsw = cbind(predsw, max_resp = rowMaxs(pm, na.rm = TRUE))
+predsw = cbind(predsw, min_resp = rowMins(pm, na.rm = TRUE))
+predsw = cbind(predsw, all_buy = rowAlls(pm >= 0, na.rm = TRUE))
+predsw = cbind(predsw, all_sell = rowAlls(pm < 0, na.rm = TRUE))
+predsw = cbind(predsw, sum_buy = rowSums2(pm >= 0, na.rm = TRUE))
+predsw = cbind(predsw, sum_sell = rowSums2(pm < 0, na.rm = TRUE))
+
+```
+
+```{r}
+# Calculat measures help function
+sign01 = function(x) factor(ifelse(x > 0, 1, 0), levels = c(0, 1))
+calculate_msrs = function(t, res) {
+  t_sign   = sign01(t)
+  res_sign = sign01(res)
+  list(acc       = mlr3measures::acc(t_sign, res_sign),
+       fbeta     = mlr3measures::fbeta(t_sign, res_sign, positive = "1"),
+       tpr       = mlr3measures::tpr(t_sign, res_sign, positive = "1"),
+       precision = mlr3measures::precision(t_sign, res_sign, positive = "1"),
+       tnr       = mlr3measures::tnr(t_sign, res_sign, positive = "1"),
+       npv       = mlr3measures::npv(t_sign, res_sign, positive = "1"),
+       mse       = mlr3measures::mse(t, res),
+       mae       = mlr3measures::mae(t, res)
+       )
+}
+```
+
+```{r}
+cols = colnames(predsw)
+cols = cols[(which(cols == "truth")+1):which(cols == "sum_resp")]
+preds_perf = melt(predsw, 
+                  id.vars = c("task", "cv", "truth", "ret_response", "date", "symbol"),
+                  measure.vars = cols)
+preds_perf = na.omit(preds_perf)
+```
+
+### PERFORMANCE
+
+```{r}
+by_ = c("task", "cv", "variable")
+DT_template(
+  preds_perf[, calculate_msrs(truth, value), by = by_],
+  pl=15)
+```
+
+### PORTFOLIO RETURNS
+
+#### LONG ONLY - Buy all with positive prediction
+
+```{r}
+# performance by returns
+cols = colnames(predsw)
+cols = cols[(which(cols == "truth")+1):which(cols == "median_resp")]
+ids = c("task", "date", "cv", "symbol", "ret_response")
+cols = c(ids, cols)
+performance_ret = melt(predsw[, ..cols], id.vars = ids)
+performance_ret = performance_ret[value > 0]
+performance_ret = performance_ret[ , .(ret = sum(ret_response)), by = c("task", "variable")]
+setorderv(performance_ret, "ret", order=-1)
+```
+
+```{r}
+# Save to azure for QC backtest
+cont = storage_container(BLOBENDPOINT, "qc-backtest")
+file_name_ =  paste0("pead_qc.csv")
+qc_data = unique(na.omit(predsw), by = c("task", "symbol", "date"))
+qc_data[, .(min_date = min(date), max_date = max(date))]
+storage_write_csv(qc_data, cont, file_name_)
+```

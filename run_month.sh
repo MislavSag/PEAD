@@ -1,10 +1,9 @@
-
 #!/bin/bash
 
 #PBS -N PEAD
 #PBS -l ncpus=4
 #PBS -l mem=16GB
-#PBS -J 1-231
+#PBS -J 1-6876
 #PBS -o experiments/logs
 #PBS -j oe
 
