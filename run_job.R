@@ -34,9 +34,9 @@ if (interactive()) {
   # Assign the arguments to variables
   cat(args, sep = "\n")
   residue = as.logical(as.integer(args[1]))
-  reg_name = as.logical(as.character(args[2]))
+  reg_name = as.character(args[2])
   cat("Argument 1 is ", residue)
-  cat("Argument 1 is ", reg_name)
+  cat("Argument 2 is ", reg_name)
 }
 
 
