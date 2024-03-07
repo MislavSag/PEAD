@@ -34,7 +34,9 @@ if (interactive()) {
   # Assign the arguments to variables
   cat(args, sep = "\n")
   residue = as.logical(as.integer(args[1]))
+  reg_name = as.logical(as.character(args[2]))
   cat("Argument 1 is ", residue)
+  cat("Argument 1 is ", reg_name)
 }
 
 
@@ -128,9 +130,9 @@ lgr::get_logger("mlr3")$set_threshold("debug")
 
 # load registry
 if (interactive()) {
-  reg = loadRegistry("experiments_test")
+  reg = loadRegistry("experiments_pre_test")
 } else {
-  reg = loadRegistry("experiments")
+  reg = loadRegistry(reg_name)
 }
 
 # extract integer
@@ -146,7 +148,7 @@ ids_not_done = findNotDone(reg=reg)
 ids_done = findDone(reg=reg)
 
 # create job collection
-resources = list(ncpus = 4) # this shouldnt be important
+resources = list(ncpus = 4) # this shouldn't be important
 if (residue) {
   jc = makeJobCollection(ids = ids_not_done,
                          resources = resources,
@@ -159,7 +161,10 @@ if (residue) {
 
 # start buffer
 buf = UpdateBuffer$new(jc$jobs$job.id)
-update = list(started = batchtools:::ustamp(), done = NA_integer_, error = NA_character_, mem.used = NA_real_)
+update = list(started = batchtools:::ustamp(),
+              done = NA_integer_,
+              error = NA_character_,
+              mem.used = NA_real_)
 
 # get job
 cat("Get Job \n")
