@@ -33,7 +33,7 @@ if (interactive()) {
 }
 
 # remove industry and sector vars
-#  FIXME: seems this coluns are not in Dt anymore
+#  FIXME: seems this columns are not in Dt anymore
 DT[, `:=`(industry = NULL, sector = NULL)]
 
 # define predictors

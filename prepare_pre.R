@@ -14,6 +14,7 @@ library(batchtools)
 library(mlr3batchmark)
 library(lubridate)
 library(finautoml)
+library(fs)
 
 
 
@@ -51,45 +52,38 @@ print("Prepare data")
 if (interactive()) {
   pead_file_local = list.files(
     "F:/data/equity/us/predictors_daily/pead_predictors",
-    pattern = "pre",
+    pattern = "pre-",
     full.names = TRUE
   )
-  DT = fread(pead_file_local)
+  dates = as.Date(gsub(".*-", "", path_ext_remove(path_file(pead_file_local))),
+                  format = "%Y%m%d")
+  DT = fread(pead_file_local[which.max(dates)])
 } else {
-  DT = fread("pead-predictors-20240119.csv")
+  DT = fread("pre-predictors-20240228.csv")
 }
 
-# create group variable
-DT[, date_rolling := as.IDate(date_rolling)]
-DT[, yearmonthid := round(date_rolling, digits = "month")]
-DT[, weekid := round(date_rolling, digits = "week")]
-DT[, .(date, date_rolling, yearmonthid, weekid)]
-DT[, yearmonthid := as.integer(yearmonthid)]
-DT[, weekid := as.integer(weekid)]
-DT[, .(date, date_rolling, yearmonthid, weekid)]
-
 # remove industry and sector vars
-DT[, `:=`(industry = NULL, sector = NULL)]
+DT[, `:=`(industry = NULL, sector = NULL, right_time = NULL)]
+
+# Define target variable
+DT[, target := amc_return]
+DT[time == "bmo", target := bmo_return]
+DT[, .(symbol, date, time, amc_return, bmo_return, target)]
+DT[, `:=`(amc_return = NULL, bmo_return = NULL)]
 
 # define predictors
-cols_non_features <- c(
-  "symbol", "date", "time", "right_time", "bmo_return", "amc_return", "open",
-  "high", "low", "close", "volume", "returns","yearmonthid", "weekid",
-  "date_rolling", "ret_5", "ret_22", "ret_44", "ret_66"
+cols_non_features = c(
+  "symbol", "date", "time", "open", "high", "low", "close", "volume", "returns", "date_rolling"
 )
-targets = c(colnames(DT)[grep("ret_excess", colnames(DT))])
-cols_features = setdiff(colnames(DT), c(cols_non_features, targets))
+cols_features = setdiff(colnames(DT), c(cols_non_features, "target"))
 
 # change feature and targets columns names due to lighgbm
 cols_features_new = vapply(cols_features, snakeToCamel, FUN.VALUE = character(1L), USE.NAMES = FALSE)
 setnames(DT, cols_features, cols_features_new)
 cols_features = cols_features_new
-targets_new = vapply(targets, snakeToCamel, FUN.VALUE = character(1L), USE.NAMES = FALSE)
-setnames(DT, targets, targets_new)
-targets = targets_new
 
 # convert columns to numeric. This is important only if we import existing features
-chr_to_num_cols <- setdiff(colnames(DT[, .SD, .SDcols = is.character]), c("symbol", "time", "right_time"))
+chr_to_num_cols = setdiff(colnames(DT[, .SD, .SDcols = is.character]), c("symbol", "time"))
 print(chr_to_num_cols)
 DT = DT[, (chr_to_num_cols) := lapply(.SD, as.numeric), .SDcols = chr_to_num_cols]
 
@@ -110,74 +104,36 @@ DT = DT[, (names(factor_cols)) := lapply(.SD, as.factor), .SD = names(factor_col
 # remove observations with missing target
 # if we want to keep as much data as possible an use only one predict horizont
 # we can skeep this step
-DT = na.omit(DT, cols = setdiff(targets, colnames(DT)[grep("xtreme", colnames(DT))]))
+DT = na.omit(DT, cols = "target")
 
 # filter data after 2013-07-01
-DT = DT[date >= as.IDate("2013-07-01")]
+DT = DT[date >= as.IDate("2015-02-01")]
 
 # change IDate to date, because of error
 # Assertion on 'feature types' failed: Must be a subset of
 # {'logical','integer','numeric','character','factor','ordered','POSIXct'},
 # but has additional elements {'IDate'}.
 DT[, date := as.POSIXct(date, tz = "UTC")]
-# DT[, .(symbol,date, date_rolling, yearmonthid)]
 
 # sort
 # this returns error on HPC. Some problem with memory
 # setorder(DT, date)
 print("This was the problem")
-# DT = DT[order(date)] # DOESNT WORK TOO
-DT = DT[order(yearmonthid, weekid)]
-head(DT[, .(symbol, date, weekid, yearmonthid)], 30)
+DT = DT[order(date)]
+head(DT[, .(symbol, date, target)], 15)
 print("This was the problem. Solved.")
 
 
 # TASKS -------------------------------------------------------------------
-print("Tasks")
+# ID columns we always keep
+id_cols = c("symbol", "date", "target")
 
-# id coluns we always keep
-id_cols = c("symbol", "date", "yearmonthid", "weekid",
-            "ret_5", "ret_22", "ret_44", "ret_66")
+# Create task
+cols_ = c(id_cols, cols_features)
+task = as_task_regr(DT[, ..cols_], id = "pre", target = "target")
 
-# convert date to PosixCt because it is requireed by mlr3
-DT[, date := as.POSIXct(date, tz = "UTC")]
-
-# task with future week excess stand returns as target
-target_ = colnames(DT)[grep("^ret.*xcess.*tand.*5", colnames(DT))]
-cols_ = c(id_cols, target_, cols_features)
-task_ret_week = as_task_regr(DT[, ..cols_], id = "taskRetWeek", target = target_)
-
-# task with future month excess stand returns as target
-target_ = colnames(DT)[grep("^ret.*xcess.*tand.*22", colnames(DT))]
-cols_ = c(id_cols, target_, cols_features)
-task_ret_month = as_task_regr(DT[, ..cols_], id = "taskRetMonth", target = target_)
-
-# task with future 2 months excess stand returns as target
-target_ = colnames(DT)[grep("^ret.*xcess.*tand.*44", colnames(DT))]
-cols_ = c(id_cols, target_, cols_features)
-task_ret_month2 = as_task_regr(DT[, ..cols_], id = "taskRetMonth2", target = target_)
-
-# task with future 2 months excess stand returns as target
-target_ = colnames(DT)[grep("^ret.*xcess.*tand.*66", colnames(DT))]
-cols_ = c(id_cols, target_, cols_features)
-task_ret_quarter <- as_task_regr(DT[, ..cols_], id = "taskRetQuarter", target = target_)
-
-# set roles for symbol, date and yearmonth_id
-task_ret_week$col_roles$feature = setdiff(task_ret_week$col_roles$feature, id_cols)
-task_ret_month$col_roles$feature = setdiff(task_ret_month$col_roles$feature, id_cols)
-task_ret_month2$col_roles$feature = setdiff(task_ret_month2$col_roles$feature, id_cols)
-task_ret_quarter$col_roles$feature = setdiff(task_ret_quarter$col_roles$feature, id_cols)
-
-# normal return week task
-id_cols = c("symbol", "date", "yearmonthid", "weekid")
-create_task = function(target_ = "ret_5") {
-  cols_ = c(id_cols, target_, cols_features)
-  task_week = as_task_regr(DT[, ..cols_], id = "taskWeek", target = target_)
-}
-task_week = create_task()
-task_month = create_task("ret_22")
-task_month2 = create_task("ret_44")
-task_quarter = create_task("ret_66")
+# Set roles for id columns
+task$col_roles$feature = setdiff(task$col_roles$feature, id_cols)
 
 
 # CROSS VALIDATIONS -------------------------------------------------------
@@ -187,7 +143,6 @@ create_custom_rolling_windows = function(task,
                                          gap_duration,
                                          tune_duration,
                                          test_duration) {
-
   # Function to convert durations to the appropriate period
   convert_duration <- function(duration) {
     if (duration_unit == "week") {
@@ -272,87 +227,65 @@ create_custom_rolling_windows = function(task,
 # create list of cvs
 custom_cvs = list()
 custom_cvs[[1]] = create_custom_rolling_windows(
-  task = task_ret_week$clone(),
+  task = task$clone(),
   duration_unit = "month",
   train_duration = 48,
   gap_duration = 1,
   tune_duration = 6,
   test_duration = 1
 )
-custom_cvs[[2]] = create_custom_rolling_windows(
-  task = task_ret_month$clone(),
-  duration_unit = "month",
-  train_duration = 48,
-  gap_duration = 1,
-  tune_duration = 6,
-  test_duration = 1
-)
-custom_cvs[[3]] = create_custom_rolling_windows(
-  task = task_ret_month2$clone(),
-  duration_unit = "month",
-  train_duration = 48,
-  gap_duration = 2,
-  tune_duration = 6,
-  test_duration = 1
-)
-custom_cvs[[4]] = create_custom_rolling_windows(
-  task = task_ret_quarter$clone(),
-  duration_unit = "month",
-  train_duration = 48,
-  gap_duration = 3,
-  tune_duration = 6,
-  test_duration = 1
-)
+# TODO: Can try with weekly data too
 
-# # visualize test
-# library(ggplot2)
-# library(patchwork)
-# prepare_cv_plot = function(x, set = "train") {
-#   x = lapply(x, function(x) data.table(ID = x))
-#   x = rbindlist(x, idcol = "fold")
-#   x[, fold := as.factor(fold)]
-#   x[, set := as.factor(set)]
-#   x[, ID := as.numeric(ID)]
-# }
-# plot_cv = function(cv, n = 5) {
-#   # cv = custom_cvs[[1]]
-#   print(cv)
-#   cv_test_inner = cv$inner
-#   cv_test_outer = cv$outer
-#
-#   # define task
-#   if (grepl("taskRetQuarter", cv_test_inner$id)) {
-#     task_ = task_ret_quarter$clone()
-#   } else if (grepl("taskRetMonth2", cv_test_inner$id)) {
-#     task_ = task_ret_month2$clone()
-#   } else if (grepl("taskRetMonth", cv_test_inner$id)) {
-#     task_ = task_ret_month$clone()
-#   } else if (grepl("taskRetWeek", cv_test_inner$id)) {
-#     task_ = task_ret_week$clone()
-#   }
-#
-#   # prepare train, tune and test folds
-#   train_sets = cv_test_inner$instance$train[1:n]
-#   train_sets = prepare_cv_plot(train_sets)
-#   tune_sets = cv_test_inner$instance$test[1:n]
-#   tune_sets = prepare_cv_plot(tune_sets, set = "tune")
-#   test_sets = cv_test_outer$instance$test[1:n]
-#   test_sets = prepare_cv_plot(test_sets, set = "test")
-#   dt_vis = rbind(train_sets[seq(1, nrow(train_sets), 1000)],
-#                  tune_sets[seq(1, nrow(tune_sets), 500)],
-#                  test_sets)
-#   substr(colnames(dt_vis), 1, 1) <- toupper(substr(colnames(dt_vis), 1, 1))
-#   ggplot(dt_vis, aes(x = Fold, y = ID, color = Set)) +
-#     geom_point() +
-#     theme_minimal() +
-#     coord_flip() +
-#     labs(x = "", y = '',
-#          title = paste0(gsub("-.*|taskRet", "", cv_test_outer$id), " horizont"))
-# }
-# plots = lapply(custom_cvs[c(1:4)], plot_cv, n = 35)
-# wp = wrap_plots(plots)
-# ggsave("plot_cv.png", plot = wp, width = 10, height = 8, dpi = 300)
+# visualize test
+if (interactive()) {
+  library(ggplot2)
+  library(patchwork)
+  prepare_cv_plot = function(x, set = "train") {
+    x = lapply(x, function(x) data.table(ID = x))
+    x = rbindlist(x, idcol = "fold")
+    x[, fold := as.factor(fold)]
+    x[, set := as.factor(set)]
+    x[, ID := as.numeric(ID)]
+  }
+  plot_cv = function(cv, n = 5) {
+    # cv = custom_cvs[[1]]
+    print(cv)
+    cv_test_inner = cv$inner
+    cv_test_outer = cv$outer
 
+    # define task
+    if (grepl("taskRetQuarter", cv_test_inner$id)) {
+      task_ = task_ret_quarter$clone()
+    } else if (grepl("taskRetMonth2", cv_test_inner$id)) {
+      task_ = task_ret_month2$clone()
+    } else if (grepl("taskRetMonth", cv_test_inner$id)) {
+      task_ = task_ret_month$clone()
+    } else if (grepl("taskRetWeek", cv_test_inner$id)) {
+      task_ = task_ret_week$clone()
+    }
+
+    # prepare train, tune and test folds
+    train_sets = cv_test_inner$instance$train[1:n]
+    train_sets = prepare_cv_plot(train_sets)
+    tune_sets = cv_test_inner$instance$test[1:n]
+    tune_sets = prepare_cv_plot(tune_sets, set = "tune")
+    test_sets = cv_test_outer$instance$test[1:n]
+    test_sets = prepare_cv_plot(test_sets, set = "test")
+    dt_vis = rbind(train_sets[seq(1, nrow(train_sets), 1000)],
+                   tune_sets[seq(1, nrow(tune_sets), 500)],
+                   test_sets)
+    substr(colnames(dt_vis), 1, 1) <- toupper(substr(colnames(dt_vis), 1, 1))
+    ggplot(dt_vis, aes(x = Fold, y = ID, color = Set)) +
+      geom_point() +
+      theme_minimal() +
+      coord_flip() +
+      labs(x = "", y = '',
+           title = paste0(gsub("-.*|taskRet", "", cv_test_outer$id), " horizont"))
+  }
+  plots = lapply(custom_cvs[1], plot_cv, n = 54)
+  wp = wrap_plots(plots)
+  ggsave("plot_cv.png", plot = wp, width = 10, height = 8, dpi = 300)
+}
 
 
 # ADD PIPELINES -----------------------------------------------------------
@@ -411,7 +344,7 @@ filters_ = list(
   po("filter", flt("cmim"), filter.nfeat = 5),
   po("filter", flt("carscore"), filter.nfeat = 5), # UNCOMMENT LATER< SLOWER SO COMMENTED FOR DEVELOPING
   po("filter", flt("information_gain"), filter.nfeat = 5),
-  # po("filter", filter = flt("relief"), filter.nfeat = 5),
+  po("filter", filter = flt("relief"), filter.nfeat = 5),
   po("filter", filter = flt("gausscov_f1st"), p0 = 0.25, filter.cutoff = 0)
   # po("filter", mlr3filters::flt("importance", learner = mlr3::lrn("classif.rpart")), filter.nfeat = 10, id = "importance_1"),
   # po("filter", mlr3filters::flt("importance", learner = lrn), filter.nfeat = 10, id = "importance_2")
@@ -498,9 +431,9 @@ search_space_template = ps(
     #     fb_ = c("nop_filter_target", "filter_target_select")
 #     ) {
 #     fb_ = match.arg(fb_) # fb_ = "nop_filter_target"
-#     task_ = task_ret_week$clone()
-#     # nr = task_$nrow
-#     # rows_ = (nr-10000):nr
+#     task_ = tasks[[1]]$clone()
+#     nr = task_$nrow
+#     rows_ = (nr-10000):nr
 #     # task_$filter(rows_)
 #     task_$filter(train_ids)
 #     # dates = task_$backend$data(rows_, "date")
@@ -516,7 +449,7 @@ search_space_template = ps(
 #   }
 #
 #   # test graph preprocesing
-#   test_default = preprocess_test()
+#   system.time({test_default = preprocess_test()})
 #   # test_2 = preprocess_test(fb_ = "filter_target_select")
 # }
 
@@ -801,7 +734,7 @@ search_space_bart$add(
 threads = 4
 set_threads(graph_rf, n = threads)
 set_threads(graph_xgboost, n = threads)
-# set_threads(graph_bart, n = threads)
+set_threads(graph_bart, n = threads)
 # set_threads(graph_ksvm, n = threads) # unstable
 set_threads(graph_nnet, n = threads)
 set_threads(graph_kknn, n = threads)
@@ -826,30 +759,17 @@ designs_l = lapply(custom_cvs, function(cv_) {
 
   # debug
   if (interactive()) {
-    to_ = 2
+    to_ = c(1, cv_inner$iters)
   } else {
-    to_ = cv_inner$iters
+    to_ = 1:cv_inner$iters
   }
 
-  designs_cv_l = lapply(1:to_, function(i) { # 1:cv_inner$iters
+  designs_cv_l = lapply(to_, function(i) { # 1:cv_inner$iters
     # debug
     # i = 1
 
-    # choose task_
-    print(cv_inner$id)
-    task_name = gsub("-.*", "", cv_inner$id)
-    if (task_name == "taskRetWeek") {
-      task_ = task_ret_week$clone()
-    } else if (task_name == "taskRetMonth") {
-      task_ = task_ret_month$clone()
-    } else if (task_name == "taskRetMonth2") {
-      task_ = task_ret_month2$clone()
-    } else if (task_name == "taskRetQuarter") {
-      task_ = task_ret_quarter$clone()
-    }
-
     # with new mlr3 version I have to clone
-    task_inner = task_$clone()
+    task_inner = task$clone()
     task_inner$filter(c(cv_inner$train_set(i), cv_inner$test_set(i)))
 
     # inner resampling
@@ -1011,11 +931,11 @@ designs_l = lapply(custom_cvs, function(cv_) {
     # outer resampling
     customo_ = rsmp("custom")
     customo_$id = paste0("custom_", cv_inner$iters, "_", i)
-    customo_$instantiate(task_, list(cv_outer$train_set(i)), list(cv_outer$test_set(i)))
+    customo_$instantiate(task, list(cv_outer$train_set(i)), list(cv_outer$test_set(i)))
 
     # nested CV for one round
     design = benchmark_grid(
-      tasks = task_,
+      tasks = task,
       learners = list(at_rf, at_xgboost, at_lightgbm, at_nnet, at_earth,
                       at_kknn, at_gbm, at_rsm, at_bart, at_catboost, at_glmnet), # , at_cforest
       resamplings = customo_
@@ -1025,12 +945,17 @@ designs_l = lapply(custom_cvs, function(cv_) {
 })
 designs = do.call(rbind, designs_l)
 
+# Try to run one (final) fold
+# bmr = benchmark(designs[33], store_models = TRUE)
+# bmr_dt = as.data.table(bmr)
+# bmr_dt$prediction
+
 # exp dir
 if (interactive()) {
-  dirname_ = "experiments_test"
+  dirname_ = "experiments_pre_test"
   if (dir.exists(dirname_)) system(paste0("rm -r ", dirname_))
 } else {
-  dirname_ = "experiments"
+  dirname_ = "experiments_pre"
 }
 
 # create registry
@@ -1062,6 +987,6 @@ sh_file = sprintf("
 cd ${PBS_O_WORKDIR}
 apptainer run image.sif run_job.R 0
 ", nrow(designs), dirname_)
-sh_file_name = "run_month.sh"
+sh_file_name = "run_month_pre.sh"
 file.create(sh_file_name)
 writeLines(sh_file, sh_file_name)

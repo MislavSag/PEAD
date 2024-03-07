@@ -9,3 +9,5 @@
 
 cd ${PBS_O_WORKDIR}
 apptainer run image.sif run_job.R 1
+
+## 6875 vs 6873

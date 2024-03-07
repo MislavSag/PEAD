@@ -31,6 +31,13 @@ FilterGausscovF1st = R6::R6Class(
   ),
 
   private = list(
+    gausscov_ = function(x, y, pv) {
+      res = mlr3misc::invoke(gausscov::f1st, y = y, x = x, .args = pv)
+      res_1 = res[[1]]
+      res_1 = res_1[res_1[, 1] != 0, , drop = FALSE]
+      return(res_1)
+    },
+
     .calculate = function(task, nfeat) {
       # debug
       # pv = list(
@@ -45,8 +52,12 @@ FilterGausscovF1st = R6::R6Class(
       #   qq   = 0
       # )
 
+      # mlr_tasks
+      # task = tsk("mtcars")
+      # pv = list(); pv$p0 = 0.05
+
       # empty vector with variable names as vector names
-      scores = rep(-1, length(task$feature_names))
+      scores = rep(0, length(task$feature_names))
       scores = mlr3misc::set_names(scores, task$feature_names)
 
       # calculate gausscov pvalues
@@ -57,10 +68,15 @@ FilterGausscovF1st = R6::R6Class(
       } else {
         y = as.matrix(task$truth())
       }
-      res = mlr3misc::invoke(gausscov::f1st, y = y, x = x, .args = pv)
-      res_1 = res[[1]]
-      res_1 = res_1[res_1[, 1] != 0, , drop = FALSE]
-      scores[res_1[, 1]] = abs(res_1[, 4])
+
+      gausscov_res = private$gausscov_(x, y, pv)
+      while (nrow(gausscov_res) == 1) {
+        pv$p0 = pv$p0 + 0.01
+        print(pv$p0)
+        gausscov_res = private$gausscov_(x, y, pv)
+      }
+
+      scores[gausscov_res[, 1]] = ceiling(abs(gausscov_res[, 4]))
 
       # save scores
       dir_name = "./gausscov_f1"
