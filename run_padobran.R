@@ -338,22 +338,58 @@ filter_target_gr = po("branch",
   po("unbranch", id = "filter_target_unbranch")
 # create mlr3 graph that takes 3 filters and union predictors from them
 filters_ = list(
-  po("filter", flt("disr"), filter.nfeat = 5),
-  po("filter", flt("jmim"), filter.nfeat = 5),
-  po("filter", flt("jmi"), filter.nfeat = 5),
-  po("filter", flt("mim"), filter.nfeat = 5),
-  po("filter", flt("mrmr"), filter.nfeat = 5),
-  po("filter", flt("njmim"), filter.nfeat = 5),
-  po("filter", flt("cmim"), filter.nfeat = 5),
-  po("filter", flt("carscore"), filter.nfeat = 5), # UNCOMMENT LATER< SLOWER SO COMMENTED FOR DEVELOPING
+  po("filter", flt("disr"), filter.nfeat = 3),
+  po("filter", flt("jmim"), filter.nfeat = 3),
+  po("filter", flt("jmi"), filter.nfeat = 3),
+  po("filter", flt("mim"), filter.nfeat = 3),
+  po("filter", flt("mrmr"), filter.nfeat = 3),
+  po("filter", flt("njmim"), filter.nfeat = 3),
+  po("filter", flt("cmim"), filter.nfeat = 3),
+  # po("filter", flt("carscore"), filter.nfeat = 5), # UNCOMMENT LATER< SLOWER SO COMMENTED FOR DEVELOPING
   po("filter", flt("information_gain"), filter.nfeat = 5),
   po("filter", filter = flt("relief"), filter.nfeat = 5),
-  po("filter", filter = flt("gausscov_f1st"), p0 = 0.25, filter.cutoff = 0)
+  po("filter", filter = flt("gausscov_f3st"), p0 = 0.01, filter.cutoff = 0)
   # po("filter", mlr3filters::flt("importance", learner = mlr3::lrn("classif.rpart")), filter.nfeat = 10, id = "importance_1"),
   # po("filter", mlr3filters::flt("importance", learner = lrn), filter.nfeat = 10, id = "importance_2")
 )
 graph_filters = gunion(filters_) %>>%
   po("featureunion", length(filters_), id = "feature_union_filters")
+
+graph_rename = function(prefix = "Sqr") {
+  task_feature_names = task$feature_names
+  task_feature_names_prefix = paste0(task_feature_names, prefix)
+  names(task_feature_names_prefix) = task_feature_names
+  return(task_feature_names_prefix)
+}
+gr_imp_square = gunion(list(
+  po("nop", id = "nop_union_transform"),
+  po("colapply", id = "cola_sqr", applicator = function(x) x^2) %>>%
+    po("filter",
+       filter = flt("gausscov_f1st"),
+       p0 = 0.5, filter.cutoff = 0,
+       id = "gauscovvf1st_sqr") %>>%
+    po("renamecolumns",
+       id = "rename_sqr",
+       param_vals = list(renaming = graph_rename())),
+  po("colapply", id = "cola_qube", applicator = function(x) x^3) %>>%
+    po("filter",
+       filter = flt("gausscov_f1st"),
+       p0 = 0.5, filter.cutoff = 0,
+       id = "gauscovvf1st_qube") %>>%
+    po("renamecolumns",
+       id = "rename_qube",
+       param_vals = list(renaming = graph_rename())),
+  po("colapply", id = "cola_qube", applicator = function(x) x^3) %>>%
+    po("filter",
+       filter = flt("gausscov_f1st"),
+       p0 = 0.5, filter.cutoff = 0,
+       id = "gauscovvf1st_qube") %>>%
+    po("renamecolumns",
+       id = "rename_qube",
+       param_vals = list(renaming = graph_rename()))
+)) %>>% po("featureunion", id = "feature_union_transform")
+
+
 
 graph_template =
   filter_target_gr %>>%
@@ -387,6 +423,7 @@ graph_template =
   # po("unbranch", id = "filter_unbranch") %>>%
   # OLD BARNCH WAY
   # filters union
+  gr_imp_square %>>%
   graph_filters %>>%
   # modelmatrix
   # po("branch", options = c("nop_interaction", "modelmatrix"), id = "interaction_branch") %>>%
