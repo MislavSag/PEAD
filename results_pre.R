@@ -127,14 +127,14 @@ predictions[, `:=`(
   response_sign = as.factor(sign01(response))
 )]
 
-# remove na value
+# Remove na value
 predictions_dt = na.omit(predictions)
 
 # number of predictions by task and cv
 unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task")]
 unique(predictions_dt, by = c("task", "learner", "cv", "row_ids"))[, .N, by = c("task", "cv")]
 
-# classification measures across ids
+# Classification measures across ids
 measures = function(t, res) {
   list(acc   = mlr3measures::acc(t, res),
        fbeta = mlr3measures::fbeta(t, res, positive = "1"),
@@ -175,7 +175,6 @@ predictions_wide = cbind(predictions_wide, all_buy = rowAlls(pm >= 0, na.rm = TR
 predictions_wide = cbind(predictions_wide, all_sell = rowAlls(pm < 0, na.rm = TRUE))
 predictions_wide = cbind(predictions_wide, sum_buy = rowSums2(pm >= 0, na.rm = TRUE))
 predictions_wide = cbind(predictions_wide, sum_sell = rowSums2(pm < 0, na.rm = TRUE))
-predictions_wide
 predictions_wide = na.omit(predictions_wide)
 
 # results by ensamble statistics for classification measures
@@ -206,22 +205,24 @@ predictions_wide_ens[, calculate_measures(truth_sign, as.factor(sign01(median_re
 predictions_wide_ens[, calculate_measures(truth_sign, as.factor(sign01(sum_resp))), by = task]
 predictions_wide_ens[, calculate_measures(truth_sign, as.factor(sign01(max_resp + min_resp))), by = task]
 predictions_wide_ens[, calculate_measures(truth_sign, as.factor(sign01(q9_resp))), by = task]
-predictions_wide_ens[, calculate_measures(truth_sign, as.factor(sign01(max_resp))), by = task]
 
-# performance by returns
-cols = colnames(dt)
+# Performance by returns
+cols = colnames(predictions_wide)
 cols = cols[which(cols == "bart"):which(cols == "sum_resp")]
 cols = c("task", cols)
-melt(na.omit(dt[, ..cols]), id.vars = "task")[value > 0, sum(value), by = .(task, variable)][order(V1)]
-melt(na.omit(dt[, ..cols]), id.vars = "task")[value > 0 & value < 2, sum(value), by = .(task, variable)][order(V1)]
+melt(na.omit(predictions_wide[, ..cols]), id.vars = "task")[value > 0, sum(value),
+                                                            by = .(task, variable)][order(V1)]
+melt(na.omit(predictions_wide[, ..cols]), id.vars = "task")[value > 0 & value < 2, sum(value),
+                                                            by = .(task, variable)][order(V1)]
 
 # Save to azure for QC backtest
 cont = storage_container(BLOBENDPOINT, "qc-backtest")
 file_name_ =  paste0("pre_qc.csv")
-qc_data = unique(dt, by = c("task", "symbol", "date"))
+qc_data = unique(predictions_wide, by = c("task", "symbol", "date"))
 # qc_data = na.omit(qc_data)
 setorder(qc_data, task, date)
 qc_data[, .(min_date = min(date), max_date = max(date))]
+last(qc_data[, .(task, symbol, date, truth, target, bart, ranger)], 100)
 storage_write_csv(qc_data, cont, file_name_)
 
 
@@ -242,11 +243,12 @@ spy = na.omit(spy)
 plot(spy[, close])
 
 # systemic risk
-task_ = "taskRetMonth"
-indicator = dt[task == task_, .(indicator = mean(mean_resp, na.rm = TRUE),
-                                indicator_sd = sd(mean_resp, na.rm = TRUE),
-                                indicator_q1 = quantile(mean_resp, probs = 0.01, na.rm = TRUE)),
-               by = date][order(date)]
+indicator = predictions_wide[, .(
+  indicator = mean(mean_resp, na.rm = TRUE),
+  indicator_sd = sd(mean_resp, na.rm = TRUE),
+  indicator_q1 = quantile(mean_resp, probs = 0.01, na.rm = TRUE)
+),
+by = date][order(date)]
 cols = colnames(indicator)[2:ncol(indicator)]
 indicator[, (cols) := lapply(.SD, nafill, type = "locf"), .SDcols = cols]
 indicator[, `:=`(
@@ -296,37 +298,3 @@ Performance(backtest_data_xts[, 2])
 library(forecast)
 ndiffs(as.xts.data.table(indicator)[, 1])
 plot(diff(as.xts.data.table(indicator)[, 1]))
-
-
-# IMPORTANT VARIABLES -----------------------------------------------------
-# gausscov files
-gausscov_files = dir_ls("F:/H4-v9-gausscov/gausscov_f3")
-
-# arrange files
-task_ = gsub(".*f3-|-\\d+.rds", "", gausscov_files)
-gausscov_dt = cbind.data.frame(gausscov_files, task = task_)
-setorder(gausscov_dt, task)
-gausscov_dt[gausscov_dt$task == "taskRetWeek",]
-gausscov_dt[gausscov_dt$task == "taskRetMonth",]
-gausscov_dt[gausscov_dt$task == "taskRetMonth2",]
-gausscov_dt[gausscov_dt$task == "taskRetQuarter",]
-
-# import gausscov vars
-gausscov_l = lapply(gausscov_dt[, "gausscov_files"], readRDS)
-gausscov = lapply(gausscov_l, function(x) x[x > 0])
-names(gausscov) = gausscov_dt[, "task"]
-gausscov = lapply(gausscov, function(x) as.data.frame(as.list(x)))
-gausscov = lapply(gausscov, melt)
-gausscov = rbindlist(gausscov, idcol = "task")
-
-# most important vars across all tasks
-gausscov[, sum(value), by = variable][order(V1)][, tail(.SD, 10)]
-gausscov[, sum(value), by = .(task, variable)][order(V1)][, tail(.SD, 5), by = task]
-
-
-# ISSUES ------------------------------------------------------------------
-# slow importing
-res_test = loadResult(1, reg = reg)
-
-
-
