@@ -18,6 +18,25 @@ library(fs)
 
 
 
+# COMMAND LINE ARGUMENTS --------------------------------------------------
+if (interactive()) {
+  LIVE = TRUE
+} else {
+  # Import command line arguments
+  args = commandArgs(trailingOnly = TRUE)
+
+  # Ensure there are enough arguments
+  if (length(args) < 1) {
+    stop("Not enough arguments. Please provide LIVE as TRUE or FALSE.")
+  }
+
+  # Assign the arguments to variables
+  cat(args, sep = "\n")
+  LIVE = as.logical(as.integer(args[1]))
+  cat("Argument 1 is ", LIVE)
+}
+
+
 # SETUP -------------------------------------------------------------------
 # utils https://stackoverflow.com/questions/1995933/number-of-months-between-two-dates
 monnb <- function(d) {
@@ -43,9 +62,6 @@ snakeToCamel <- function(snake_str) {
 
   return(camel_case_str)
 }
-
-# Backtest od Live (paper)
-LIVE = TRUE
 
 
 # PREPARE DATA ------------------------------------------------------------
