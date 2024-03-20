@@ -44,6 +44,9 @@ snakeToCamel <- function(snake_str) {
   return(camel_case_str)
 }
 
+# Backtest od Live (paper)
+LIVE = TRUE
+
 
 # PREPARE DATA ------------------------------------------------------------
 print("Prepare data")
@@ -121,6 +124,7 @@ DT[, date := as.POSIXct(date, tz = "UTC")]
 print("This was the problem")
 DT = DT[order(date)]
 head(DT[, .(symbol, date, target)], 15)
+DT[, max(date)]
 print("This was the problem. Solved.")
 
 
@@ -758,7 +762,9 @@ designs_l = lapply(custom_cvs, function(cv_) {
   cat("Number of iterations fo cv inner is ", cv_inner$iters, "\n")
 
   # debug
-  if (interactive()) {
+  if (LIVE) {
+    to_ = cv_inner$iters
+  } else if (interactive()) {
     to_ = c(1, cv_inner$iters)
   } else {
     to_ = 1:cv_inner$iters
@@ -945,20 +951,23 @@ designs_l = lapply(custom_cvs, function(cv_) {
 })
 designs = do.call(rbind, designs_l)
 
-# Try to run one (final) fold
-# bmr = benchmark(designs[33], store_models = TRUE)
+# # Try to run one (final) fold
+# bmr = benchmark(designs[11], store_models = TRUE)
 # bmr_dt = as.data.table(bmr)
-# bmr_dt$prediction
+# bmr_dt$prediction[[1]]$response
 
 # exp dir
-if (interactive()) {
+if (LIVE) {
+  dirname_ = "experiments_pread_live"
+  if (dir.exists(dirname_)) system(paste0("rm -r ", dirname_))
+} else if (interactive()) {
   dirname_ = "experiments_pre_test"
   if (dir.exists(dirname_)) system(paste0("rm -r ", dirname_))
 } else {
   dirname_ = "experiments_pre"
 }
 
-# create registry
+# Create registry
 print("Create registry")
 packages = c("data.table", "gausscov", "paradox", "mlr3", "mlr3pipelines",
              "mlr3tuning", "mlr3misc", "future", "future.apply",
@@ -974,7 +983,26 @@ print("Save registry")
 saveRegistry(reg = reg)
 
 # create sh file
-sh_file = sprintf("
+# create sh file
+if (interactive() && LIVE) {
+  # load registry
+  # reg = loadRegistry("experiments_live", writeable = TRUE)
+  # test 1 job
+  # result = testJob(1, external = TRUE, reg = reg)
+
+  # get nondone jobs
+  ids = findNotDone(reg = reg)
+
+  # set up cluster (for local it is parallel)
+  cf = makeClusterFunctionsSocket(ncpus = 6L)
+  reg$cluster.functions = cf
+  saveRegistry(reg = reg)
+
+  # define resources and submit jobs
+  resources = list(ncpus = 2, memory = 8000)
+  submitJobs(ids = ids$job.id, resources = resources, reg = reg)
+} else {
+  sh_file = sprintf("
 #!/bin/bash
 
 #PBS -N PEAD
@@ -987,6 +1015,7 @@ sh_file = sprintf("
 cd ${PBS_O_WORKDIR}
 apptainer run image.sif run_job.R 0
 ", nrow(designs), dirname_)
-sh_file_name = "run_month_pre.sh"
-file.create(sh_file_name)
-writeLines(sh_file, sh_file_name)
+  sh_file_name = "run_month_pre.sh"
+  file.create(sh_file_name)
+  writeLines(sh_file, sh_file_name)
+}
