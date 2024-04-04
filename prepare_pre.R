@@ -1042,7 +1042,7 @@ if (interactive() && LIVE) {
 
 #PBS -N PEAD
 #PBS -l ncpus=4
-#PBS -l mem=8GB
+#PBS -l mem=32GB
 #PBS -J 1-%d
 #PBS -o %s/logs
 #PBS -j oe
