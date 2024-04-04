@@ -24,13 +24,14 @@ print("Prepare data")
 if (interactive()) {
   pead_file_local = list.files(
     "F:/data/equity/us/predictors_daily/pead_predictors",
-    pattern = "pead",
+    pattern = "pre",
     full.names = TRUE
   )
   DT = fread(last(pead_file_local))
 } else {
   DT = fread("pead-predictors-20240129.csv")
 }
+# pre-predictors-20240322.csv
 
 # remove industry and sector vars
 #  FIXME: seems this columns are not in Dt anymore

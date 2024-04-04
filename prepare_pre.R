@@ -78,7 +78,7 @@ if (interactive()) {
                   format = "%Y%m%d")
   DT = fread(pead_file_local[which.max(dates)])
 } else {
-  DT = fread("pre-predictors-20240228.csv")
+  DT = fread("pre-predictors-20240402.csv")
 }
 
 # remove industry and sector vars
@@ -89,6 +89,13 @@ DT[, target := amc_return]
 DT[time == "bmo", target := bmo_return]
 DT[, .(symbol, date, time, amc_return, bmo_return, target)]
 DT[, `:=`(amc_return = NULL, bmo_return = NULL)]
+
+# Define target variable for live observations
+cols_ = colnames(DT)[c(1:10, ncol(DT))]
+DT[, ..cols_]
+DT[is.na(target), ..cols_]
+DT[is.na(target) & date > (Sys.Date() - 6), ..cols_]
+DT[is.na(target) & date > (Sys.Date() - 6), target := 0]
 
 # define predictors
 cols_non_features = c(
@@ -101,18 +108,18 @@ cols_features_new = vapply(cols_features, snakeToCamel, FUN.VALUE = character(1L
 setnames(DT, cols_features, cols_features_new)
 cols_features = cols_features_new
 
-# convert columns to numeric. This is important only if we import existing features
+# Convert columns to numeric. This is important only if we import existing features
 chr_to_num_cols = setdiff(colnames(DT[, .SD, .SDcols = is.character]), c("symbol", "time"))
 print(chr_to_num_cols)
 DT = DT[, (chr_to_num_cols) := lapply(.SD, as.numeric), .SDcols = chr_to_num_cols]
 
-# remove constant columns in set
+# Remove constant columns in set
 features_ = DT[, ..cols_features]
 remove_cols = colnames(features_)[apply(features_, 2, var, na.rm=TRUE) == 0]
 print(paste0("Removing feature with 0 standard deviation: ", remove_cols))
 cols_features = setdiff(cols_features, remove_cols)
 
-# convert variables with low number of unique values to factors
+# Convert variables with low number of unique values to factors
 int_numbers = na.omit(DT[, ..cols_features])[, lapply(.SD, function(x) all(floor(x) == x))]
 int_cols = colnames(DT[, ..cols_features])[as.matrix(int_numbers)[1,]]
 factor_cols = DT[, ..int_cols][, lapply(.SD, function(x) length(unique(x)))]
@@ -134,7 +141,7 @@ DT = DT[date >= as.IDate("2015-02-01")]
 # but has additional elements {'IDate'}.
 DT[, date := as.POSIXct(date, tz = "UTC")]
 
-# sort
+# Sort
 # this returns error on HPC. Some problem with memory
 # setorder(DT, date)
 print("This was the problem")
@@ -252,60 +259,68 @@ custom_cvs[[1]] = create_custom_rolling_windows(
   train_duration = 48,
   gap_duration = 1,
   tune_duration = 6,
-  test_duration = 1
+  test_duration = if (LIVE) 2 else 1
 )
 # TODO: Can try with weekly data too
 
+# Check last data and last observation in custom cv last fold
+custom_cvs[[1]]$outer$iters
+custom_cvs[[1]]$outer$instance$test[[custom_cvs[[1]]$outer$iters]]
+task$backend$data(
+  rows = custom_cvs[[1]]$outer$instance$test[[custom_cvs[[1]]$outer$iters]],
+  cols = task$backend$colnames[1:15]
+)
+
 # visualize test
-if (interactive()) {
-  library(ggplot2)
-  library(patchwork)
-  prepare_cv_plot = function(x, set = "train") {
-    x = lapply(x, function(x) data.table(ID = x))
-    x = rbindlist(x, idcol = "fold")
-    x[, fold := as.factor(fold)]
-    x[, set := as.factor(set)]
-    x[, ID := as.numeric(ID)]
-  }
-  plot_cv = function(cv, n = 5) {
-    # cv = custom_cvs[[1]]
-    print(cv)
-    cv_test_inner = cv$inner
-    cv_test_outer = cv$outer
-
-    # define task
-    if (grepl("taskRetQuarter", cv_test_inner$id)) {
-      task_ = task_ret_quarter$clone()
-    } else if (grepl("taskRetMonth2", cv_test_inner$id)) {
-      task_ = task_ret_month2$clone()
-    } else if (grepl("taskRetMonth", cv_test_inner$id)) {
-      task_ = task_ret_month$clone()
-    } else if (grepl("taskRetWeek", cv_test_inner$id)) {
-      task_ = task_ret_week$clone()
-    }
-
-    # prepare train, tune and test folds
-    train_sets = cv_test_inner$instance$train[1:n]
-    train_sets = prepare_cv_plot(train_sets)
-    tune_sets = cv_test_inner$instance$test[1:n]
-    tune_sets = prepare_cv_plot(tune_sets, set = "tune")
-    test_sets = cv_test_outer$instance$test[1:n]
-    test_sets = prepare_cv_plot(test_sets, set = "test")
-    dt_vis = rbind(train_sets[seq(1, nrow(train_sets), 1000)],
-                   tune_sets[seq(1, nrow(tune_sets), 500)],
-                   test_sets)
-    substr(colnames(dt_vis), 1, 1) <- toupper(substr(colnames(dt_vis), 1, 1))
-    ggplot(dt_vis, aes(x = Fold, y = ID, color = Set)) +
-      geom_point() +
-      theme_minimal() +
-      coord_flip() +
-      labs(x = "", y = '',
-           title = paste0(gsub("-.*|taskRet", "", cv_test_outer$id), " horizont"))
-  }
-  plots = lapply(custom_cvs[1], plot_cv, n = 54)
-  wp = wrap_plots(plots)
-  ggsave("plot_cv.png", plot = wp, width = 10, height = 8, dpi = 300)
-}
+# if (interactive()) {
+#   library(ggplot2)
+#   library(patchwork)
+#   prepare_cv_plot = function(x, set = "train") {
+#     x = lapply(x, function(x) data.table(ID = x))
+#     x = rbindlist(x, idcol = "fold")
+#     x[, fold := as.factor(fold)]
+#     x[, set := as.factor(set)]
+#     x[, ID := as.numeric(ID)]
+#   }
+#   plot_cv = function(cv, n = 5) {
+#     # cv = custom_cvs[[1]]
+#     print(cv)
+#     cv_test_inner = cv$inner
+#     cv_test_outer = cv$outer
+#
+#     # define task
+#     if (grepl("taskRetQuarter", cv_test_inner$id)) {
+#       task_ = task_ret_quarter$clone()
+#     } else if (grepl("taskRetMonth2", cv_test_inner$id)) {
+#       task_ = task_ret_month2$clone()
+#     } else if (grepl("taskRetMonth", cv_test_inner$id)) {
+#       task_ = task_ret_month$clone()
+#     } else if (grepl("taskRetWeek", cv_test_inner$id)) {
+#       task_ = task_ret_week$clone()
+#     }
+#
+#     # prepare train, tune and test folds
+#     train_sets = cv_test_inner$instance$train[1:n]
+#     train_sets = prepare_cv_plot(train_sets)
+#     tune_sets = cv_test_inner$instance$test[1:n]
+#     tune_sets = prepare_cv_plot(tune_sets, set = "tune")
+#     test_sets = cv_test_outer$instance$test[1:n]
+#     test_sets = prepare_cv_plot(test_sets, set = "test")
+#     dt_vis = rbind(train_sets[seq(1, nrow(train_sets), 1000)],
+#                    tune_sets[seq(1, nrow(tune_sets), 500)],
+#                    test_sets)
+#     substr(colnames(dt_vis), 1, 1) <- toupper(substr(colnames(dt_vis), 1, 1))
+#     ggplot(dt_vis, aes(x = Fold, y = ID, color = Set)) +
+#       geom_point() +
+#       theme_minimal() +
+#       coord_flip() +
+#       labs(x = "", y = '',
+#            title = paste0(gsub("-.*|taskRet", "", cv_test_outer$id), " horizont"))
+#   }
+#   plots = lapply(custom_cvs[1], plot_cv, n = 54)
+#   wp = wrap_plots(plots)
+#   ggsave("plot_cv.png", plot = wp, width = 10, height = 8, dpi = 300)
+# }
 
 
 # ADD PIPELINES -----------------------------------------------------------
@@ -713,6 +728,7 @@ search_space_earth$add(
 )
 
 # rsm graph
+# TODO It need lots of memory ?
 graph_rsm = graph_template %>>%
   po("learner", learner = lrn("regr.rsm"))
 plot(graph_rsm)
@@ -751,7 +767,11 @@ search_space_bart$add(
 # iter = p_int(lower = 100, upper = 1000)
 
 # threads
-threads = 4
+if (interactive()) {
+  threads = 2
+} else {
+  threads = 4
+}
 set_threads(graph_rf, n = threads)
 set_threads(graph_xgboost, n = threads)
 set_threads(graph_bart, n = threads)
@@ -998,7 +1018,6 @@ batchmark(designs, reg = reg)
 print("Save registry")
 saveRegistry(reg = reg)
 
-# create sh file
 # create sh file
 if (interactive() && LIVE) {
   # load registry

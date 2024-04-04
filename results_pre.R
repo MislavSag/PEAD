@@ -17,7 +17,8 @@ endpoint = "https://snpmarketdata.blob.core.windows.net/"
 BLOBENDPOINT = storage_endpoint(endpoint, key=blob_key)
 
 # globals
-PATH = "F:/padobran/pre"
+# PATH = "F:/padobran/pre"
+PATH = "F:/padobran/pre_live"
 
 # load registry
 reg = loadRegistry(PATH, work.dir=PATH)
