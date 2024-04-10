@@ -8,6 +8,7 @@
 #PBS -j oe
 
 cd ${PBS_O_WORKDIR}
-apptainer run image.sif run_job.R 1 experiments_pread_live
+# apptainer run image.sif run_job.R 1 experiments_pread_live
+apptainer run image.sif run_job.R 0 experiments
 
 # 11 - 5
