@@ -93,7 +93,7 @@ if (interactive()) {
     DT = fread(pead_file_local[which.max(dates)])
   # }
 } else {
-  DT = fread("pre-predictors-20240402.csv")
+  DT = fread("pre-predictors-20240408.csv")
 }
 
 # Remove industry and sector vars
