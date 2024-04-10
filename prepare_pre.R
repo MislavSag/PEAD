@@ -15,6 +15,7 @@ library(mlr3batchmark)
 library(lubridate)
 library(finautoml)
 library(fs)
+library(AzureStor)
 
 
 
@@ -63,25 +64,39 @@ snakeToCamel <- function(snake_str) {
   return(camel_case_str)
 }
 
+# Azure creditentials
+endpoint = "https://snpmarketdata.blob.core.windows.net/"
+key = "0M4WRlV0/1b6b3ZpFKJvevg4xbC/gaNBcdtVZW+zOZcRi0ZLfOm1v/j2FZ4v+o8lycJLu1wVE6HT+ASt0DdAPQ=="
+BLOBENDPOINT = storage_endpoint(endpoint, key=key)
+cont = storage_container(BLOBENDPOINT, "jphd")
+
 
 # PREPARE DATA ------------------------------------------------------------
 print("Prepare data")
 
 # read predictors
 if (interactive()) {
-  pead_file_local = list.files(
-    "F:/data/equity/us/predictors_daily/pead_predictors",
-    pattern = "pre-",
-    full.names = TRUE
-  )
-  dates = as.Date(gsub(".*-", "", path_ext_remove(path_file(pead_file_local))),
-                  format = "%Y%m%d")
-  DT = fread(pead_file_local[which.max(dates)])
+  # if (LIVE) {
+    # file_name_ = paste0(
+    #   "pre-predictors-", strftime(Sys.Date() - 1, "%Y%m%d"), ".csv"
+    #   )
+    # DT = storage_read_csv(cont, file_name_)
+    # setDT(DT)
+  # } else {
+    pead_file_local = list.files(
+      "F:/data/equity/us/predictors_daily/pead_predictors",
+      pattern = "pre-",
+      full.names = TRUE
+    )
+    dates = as.Date(gsub(".*-", "", path_ext_remove(path_file(pead_file_local))),
+                    format = "%Y%m%d")
+    DT = fread(pead_file_local[which.max(dates)])
+  # }
 } else {
   DT = fread("pre-predictors-20240402.csv")
 }
 
-# remove industry and sector vars
+# Remove industry and sector vars
 DT[, `:=`(industry = NULL, sector = NULL, right_time = NULL)]
 
 # Define target variable
@@ -147,8 +162,20 @@ DT[, date := as.POSIXct(date, tz = "UTC")]
 print("This was the problem")
 DT = DT[order(date)]
 head(DT[, .(symbol, date, target)], 15)
-DT[, max(date)]
 print("This was the problem. Solved.")
+
+# Checks
+DT[, max(date)]
+DT[date == max(date)][, 1:50]
+DT[date == max(date)][, colnames(.SD)[colSums(is.na(.SD)) == .N]]
+DT[date == max(date)][, colnames(.SD)[colSums(is.na(.SD)) > 0]]
+
+# Remove columns with missing values for last observations
+if (LIVE) {
+  cols_remove = DT[date == max(date)][, colnames(.SD)[colSums(is.na(.SD)) > 0]]
+  DT = DT[, .SD, .SDcols = -cols_remove]
+  cols_features = setdiff(cols_features, cols_remove)
+}
 
 
 # TASKS -------------------------------------------------------------------
@@ -766,12 +793,13 @@ search_space_bart$add(
 # burn = p_int(lower = 10, upper = 100),
 # iter = p_int(lower = 100, upper = 1000)
 
-# threads
-if (interactive()) {
-  threads = 2
-} else {
-  threads = 4
-}
+# Threads
+# if (interactive()) {
+#   threads = 4
+# } else {
+#   threads = 4
+# }
+threads = 4
 set_threads(graph_rf, n = threads)
 set_threads(graph_xgboost, n = threads)
 set_threads(graph_bart, n = threads)
@@ -1010,12 +1038,14 @@ packages = c("data.table", "gausscov", "paradox", "mlr3", "mlr3pipelines",
              "mlr3extralearners", "stats")
 reg = makeExperimentRegistry(file.dir = dirname_, seed = 1, packages = packages)
 
-# populate registry with problems and algorithms to form the jobs
-print("Batchmark")
-batchmark(designs, reg = reg)
+# Populate registry with problems and algorithms to form the jobs
+if (LIVE) {
+  batchmark(designs, store_models = TRUE, reg = reg)
+} else {
+  batchmark(designs, reg = reg)
+}
 
-# save registry
-print("Save registry")
+# Save registry
 saveRegistry(reg = reg)
 
 # create sh file
@@ -1053,4 +1083,30 @@ apptainer run image.sif run_job.R 0
   sh_file_name = "run_month_pre.sh"
   file.create(sh_file_name)
   writeLines(sh_file, sh_file_name)
+}
+
+
+# PREAD RESULTS -----------------------------------------------------------
+if (LIVE) {
+  # Results of result
+  predictions = cbind.data.frame(
+    row_ids  = result$prediction$test$row_ids,
+    truth    = result$prediction$test$truth,
+    response = result$prediction$test$response
+  )
+  setDT(predictions)
+  predictions[truth == 0]
+
+  # Merge metadata to predictions
+  predictions_dt = task$backend$data(rows = predictions[, row_ids],
+                                     cols = c("..row_id", "date", "symbol"))
+  setnames(predictions_dt, "..row_id", "row_ids")
+  predictions_dt = predictions_dt[predictions, on = c("row_ids")]
+  predictions_dt[date > as.Date("2024-04-01")]
+
+  # Save predictions for the last date
+  predictions_dt[date == max(date)]
+
+  # Save the model for the weekend
+
 }
